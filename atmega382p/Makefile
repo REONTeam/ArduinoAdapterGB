@@ -34,7 +34,7 @@ upload: $(name).hex $(name).lst
 
 .PHONY: screen
 screen: upload
-	minicom -D $(SERIAL) -b 9600
+	minicom -D $(SERIAL) -b 2000000
 
 %.hex: $(dir_build)/%.elf
 	$(OBJCOPY) -O ihex -R .eeprom $< $@

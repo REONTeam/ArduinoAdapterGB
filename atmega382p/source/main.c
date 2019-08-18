@@ -7,6 +7,13 @@
 #include "serial.h"
 #include "libmobile/mobile.h"
 
+// Define this to print every byte sent and received
+//#define DEBUG_SPI
+
+// Define this to print every command sent and received
+#define DEBUG_CMD
+
+#ifdef DEBUG_SPI
 #define BUF_LEN 0x100
 volatile unsigned char buffer[BUF_LEN];
 volatile unsigned buf_in;
@@ -37,41 +44,58 @@ unsigned char buffer_get(void)
     return c;
 }
 
-char last_SPDR;
+char last_SPDR = 0xD2;
+#endif
+
+#ifdef DEBUG_CMD
+#include "libmobile/debug_cmd.h"
+#else
+void mobile_board_debug_cmd(void) {}
+#endif
 
 void mobile_board_reset_spi(void)
 {
     SPCR = 0;
     pinmode(PIN_SPI_MISO, OUTPUT);
     SPCR = _BV(SPE) | _BV(SPIE) | _BV(CPOL) | _BV(CPHA);
-    SPDR = last_SPDR = 0xD2;
+    SPDR = 0xD2;
 }
 
 int main(void)
 {
-    serial_init(9600);
+    serial_init(2000000);
     mobile_init();
 
+#ifdef DEBUG_SPI
     buf_in = 0;
     buf_out = 0;
+#endif
 
+#if defined(DEBUG_SPI) || defined(DEBUG_CMD)
     printf("----\r\n");
+#endif
 
     for (;;) {
         mobile_loop();
 
+#ifdef DEBUG_SPI
         if (!buffer_isempty()) {
             printf("In %02X ", buffer_get());
             while (buffer_isempty());
             printf("Out %02X\r\n", buffer_get());
         }
+#endif
     }
 }
 
 
 ISR (SPI_STC_vect)
 {
+#ifdef DEBUG_SPI
     if (!buffer_isfull()) buffer_put(SPDR);
     if (!buffer_isfull()) buffer_put(last_SPDR);
     SPDR = last_SPDR = mobile_transfer(SPDR);
+#else
+    SPDR = mobile_transfer(SPDR);
+#endif
 }
