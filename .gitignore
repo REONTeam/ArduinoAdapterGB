@@ -1,0 +1,3 @@
+atmega382p/build/
+atmega382p/*.hex
+atmega382p/*.lst
