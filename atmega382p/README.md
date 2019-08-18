@@ -15,8 +15,9 @@ Alternatively, you can install it from source through [crosstool-ng](https://git
 Once the requirements have been satisfied, run `make`. To upload it to the board, run `make upload`, or `make SERIAL=/dev/ttyACM0 upload`, changing `ttyACM0` to whatever port your arduino is connected to.
 
 The following pin configuration is required:
+
 |      Pin |  Connection |
-|----------|-------------|
+| -------- | ----------- |
 | 19 (PB5) |  Gameboy SC |
 | 18 (PB4) |  Gameboy SO |
 | 17 (PB3) |  Gameboy SI |

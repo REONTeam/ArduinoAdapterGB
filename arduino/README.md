@@ -11,8 +11,9 @@ How to use
 Open `arduino.ino` in the Arduino IDE and upload it to your board. If you're using Windows, or checked out a zip from github, you might have to copy libmobile into the src directory.
 
 The following pin configuration is required:
+
 |  Pin | Arduino Uno |  Connection |
-|------|-------------|-------------|
+| ---- | ----------- | ----------- |
 |  SCK |          13 |  Gameboy SC |
 | MISO |          12 |  Gameboy SO |
 | MOSI |          11 |  Gameboy SI |
