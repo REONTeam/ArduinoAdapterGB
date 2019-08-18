@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include <avr/interrupt.h>
-#include <util/delay.h>
+#include <avr/eeprom.h>
 
 #include "utils.h"
 #include "pins.h"
@@ -50,7 +50,7 @@ char last_SPDR = 0xD2;
 #ifdef DEBUG_CMD
 #include "libmobile/debug_cmd.h"
 #else
-void mobile_board_debug_cmd(void) {}
+void mobile_board_debug_cmd(const int send, const struct mobile_packet *packet) {}
 #endif
 
 void mobile_board_reset_spi(void)
@@ -59,6 +59,16 @@ void mobile_board_reset_spi(void)
     pinmode(PIN_SPI_MISO, OUTPUT);
     SPCR = _BV(SPE) | _BV(SPIE) | _BV(CPOL) | _BV(CPHA);
     SPDR = 0xD2;
+}
+
+void mobile_board_config_read(unsigned char *dest, const uintptr_t offset, const size_t size)
+{
+    eeprom_read_block(dest, (void *)offset, size);
+}
+
+void mobile_board_config_write(const unsigned char *src, const uintptr_t offset, const size_t size)
+{
+    eeprom_write_block(src, (void *)offset, size);
 }
 
 int main(void)

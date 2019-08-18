@@ -1,3 +1,5 @@
+#include <EEPROM.h>
+
 #include "src/libmobile/mobile.h"
 
 // Define this to print every byte sent and received
@@ -41,13 +43,13 @@ char last_SPDR = 0xD2;
 #endif
 
 #ifdef DEBUG_CMD
-#include "src/libmobile/debug_cmd.h"
-#else
-void mobile_board_debug_cmd(void) {}
-#endif
-
 static int serial_putchar(char c, FILE *f) { return Serial.write(c); }
 static FILE serial_stdout;
+
+#include "src/libmobile/debug_cmd.h"
+#else
+void mobile_board_debug_cmd(const int send, const struct mobile_packet *packet) {}
+#endif
 
 void mobile_board_reset_spi(void)
 {
@@ -57,14 +59,19 @@ void mobile_board_reset_spi(void)
     SPDR = 0xD2;
 }
 
+void mobile_board_config_read(unsigned char *dest, const uintptr_t offset, const size_t size)
+{
+    for (size_t i = 0; i < size; i++) dest[i] = EEPROM.read(offset + i);
+}
+
+void mobile_board_config_write(const unsigned char *src, const uintptr_t offset, const size_t size)
+{
+    for (size_t i = 0; i < size; i++) EEPROM.write(offset + i, src[i]);
+}
+
 void setup()
 {
     Serial.begin(2000000);
-
-    // Redirect any printf to the Arduino serial.
-    fdev_setup_stream(&serial_stdout, serial_putchar, NULL, _FDEV_SETUP_WRITE);
-    stdout = &serial_stdout;
-
     mobile_init();
 
 #ifdef DEBUG_SPI
@@ -72,8 +79,14 @@ void setup()
     buf_out = 0;
 #endif
 
+#ifdef DEBUG_CMD
+    // Redirect any printf to the Arduino serial.
+    fdev_setup_stream(&serial_stdout, serial_putchar, NULL, _FDEV_SETUP_WRITE);
+    stdout = &serial_stdout;
+#endif
+
 #if defined(DEBUG_SPI) || defined(DEBUG_CMD)
-    printf("----\r\n");
+    Serial.println("----");
 #endif
 }
 
@@ -83,9 +96,11 @@ void loop()
 
 #ifdef DEBUG_SPI
     if (!buffer_isempty()) {
-        printf("In %02X ", buffer_get());
+        Serial.print("In ");
+        Serial.print(buffer_get(), HEX);
         while (buffer_isempty());
-        printf("Out %02X\r\n", buffer_get());
+        Serial.print(" Out ");
+        Serial.println(buffer_get(), HEX);
     }
 #endif
 }
