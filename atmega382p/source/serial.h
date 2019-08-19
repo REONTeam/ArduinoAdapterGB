@@ -31,7 +31,7 @@ int serial_putchar_inline(const char c);
 int serial_putchar(const char c);
 int serial_getchar_inline(void);
 int serial_getchar(void);
-int serial_available(void);
+unsigned serial_available(void);
 void serial_drain(void);
 void serial_init_config(const unsigned long bauds, const uint8_t config);
 void serial_init(const unsigned long bauds);
