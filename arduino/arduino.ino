@@ -1,5 +1,4 @@
 #include <EEPROM.h>
-
 #include "src/libmobile/mobile.h"
 
 // Define this to print every byte sent and received

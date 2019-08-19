@@ -1,11 +1,11 @@
 #include <stdio.h>
 #include <avr/interrupt.h>
 #include <avr/eeprom.h>
+#include "libmobile/mobile.h"
 
 #include "utils.h"
 #include "pins.h"
 #include "serial.h"
-#include "libmobile/mobile.h"
 
 // Define this to print every byte sent and received
 //#define DEBUG_SPI
@@ -50,7 +50,7 @@ char last_SPDR = 0xD2;
 #ifdef DEBUG_CMD
 #include "libmobile/debug_cmd.h"
 #else
-void mobile_board_debug_cmd(const int send, const struct mobile_packet *packet) {}
+void mobile_board_debug_cmd(__attribute__((unused)) const int send, __attribute__((unused)) const struct mobile_packet *packet) {}
 #endif
 
 void mobile_board_reset_spi(void)
