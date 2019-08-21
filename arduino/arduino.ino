@@ -44,10 +44,7 @@ char last_SPDR = 0xD2;
 #ifdef DEBUG_CMD
 static int serial_putchar(char c, FILE *f) { return Serial.write(c); }
 static FILE serial_stdout;
-
 #include "src/libmobile/debug_cmd.h"
-#else
-void mobile_board_debug_cmd(const int send, const struct mobile_packet *packet) {}
 #endif
 
 void mobile_board_reset_spi(void)

@@ -49,8 +49,6 @@ char last_SPDR = 0xD2;
 
 #ifdef DEBUG_CMD
 #include "libmobile/debug_cmd.h"
-#else
-void mobile_board_debug_cmd(__attribute__((unused)) const int send, __attribute__((unused)) const struct mobile_packet *packet) {}
 #endif
 
 void mobile_board_reset_spi(void)
