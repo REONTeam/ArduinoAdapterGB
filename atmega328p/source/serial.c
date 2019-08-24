@@ -138,9 +138,6 @@ void serial_init_config(const unsigned long bauds, const uint8_t config)
     UCSR0B = _BV(RXEN0) | _BV(TXEN0) | _BV(RXCIE0);  // Enable it and the receive interrupt
     UCSR0C = config;
 
-    // Make sure interrupts are enabled
-    sei();
-
     // Setup stdio streams
     stdout = stderr = stdin = &serial;
 }

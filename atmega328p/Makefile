@@ -1,4 +1,4 @@
-name := $(notdir $(PWD))
+name := mobile
 
 dir_source := source
 dir_build := build

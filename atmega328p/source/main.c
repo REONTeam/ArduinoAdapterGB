@@ -1,3 +1,4 @@
+#include <stdint.h>
 #include <stdio.h>
 #include <avr/interrupt.h>
 #include <avr/eeprom.h>
@@ -51,9 +52,16 @@ char last_SPDR = 0xD2;
 #include "libmobile/debug_cmd.h"
 #endif
 
-void mobile_board_reset_spi(void)
+volatile uint32_t micros = 0;
+uint32_t micros_latch = 0;
+
+void mobile_board_disable_spi(void)
 {
-    SPCR = 0;
+    SPCR = SPSR = 0;
+}
+
+void mobile_board_enable_spi(void)
+{
     pinmode(PIN_SPI_MISO, OUTPUT);
     SPCR = _BV(SPE) | _BV(SPIE) | _BV(CPOL) | _BV(CPHA);
     SPDR = 0xD2;
@@ -69,10 +77,35 @@ void mobile_board_config_write(const unsigned char *src, const uintptr_t offset,
     eeprom_write_block(src, (void *)offset, size);
 }
 
+void mobile_board_time_latch(void)
+{
+	uint8_t old_SREG = SREG;
+    cli();
+    micros_latch = micros;
+    SREG = old_SREG;
+}
+
+bool mobile_board_time_check_ms(unsigned ms)
+{
+    uint8_t old_SREG = SREG;
+    cli();
+    bool ret = micros > micros_latch + ((uint32_t)ms * 1000);
+    SREG = old_SREG;
+    return ret;
+}
+
 int main(void)
 {
     serial_init(2000000);
     mobile_init();
+
+    // Set up timer 0
+    micros = 0;
+    TCNT0 = 0;
+    TCCR0B = _BV(CS01) | _BV(CS00);  // Prescale by 1/64
+    TIMSK0 = _BV(TOIE0);  // Enable the interrupt
+
+    sei();
 
 #ifdef DEBUG_SPI
     buf_in = 0;
@@ -96,7 +129,6 @@ int main(void)
     }
 }
 
-
 ISR (SPI_STC_vect)
 {
 #ifdef DEBUG_SPI
@@ -106,4 +138,9 @@ ISR (SPI_STC_vect)
 #else
     SPDR = mobile_transfer(SPDR);
 #endif
+}
+
+ISR (TIMER0_OVF_vect)
+{
+    micros += (64 * 256) / (F_CPU / 1000000L);
 }
