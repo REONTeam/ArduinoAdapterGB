@@ -17,8 +17,8 @@
 #ifdef DEBUG_SPI
 #define BUF_LEN 0x100
 volatile unsigned char buffer[BUF_LEN];
-volatile unsigned buf_in;
-volatile unsigned buf_out;
+volatile unsigned buf_in = 0;
+volatile unsigned buf_out = 0;
 
 int buffer_isempty(void)
 {
@@ -100,17 +100,11 @@ int main(void)
     mobile_init();
 
     // Set up timer 0
-    micros = 0;
     TCNT0 = 0;
     TCCR0B = _BV(CS01) | _BV(CS00);  // Prescale by 1/64
     TIMSK0 = _BV(TOIE0);  // Enable the interrupt
 
     sei();
-
-#ifdef DEBUG_SPI
-    buf_in = 0;
-    buf_out = 0;
-#endif
 
 #if defined(DEBUG_SPI) || defined(DEBUG_CMD)
     printf("----\r\n");

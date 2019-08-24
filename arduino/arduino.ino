@@ -10,8 +10,8 @@
 #ifdef DEBUG_SPI
 #define BUF_LEN 0x100
 volatile unsigned char buffer[BUF_LEN];
-volatile unsigned buf_in;
-volatile unsigned buf_out;
+volatile unsigned buf_in = 0;
+volatile unsigned buf_out = 0;
 
 int buffer_isempty()
 {
@@ -47,9 +47,15 @@ FILE serial_stdout;
 #include "src/libmobile/debug_cmd.h"
 #endif
 
-void mobile_board_reset_spi(void)
+unsigned long millis_latch = 0;
+
+void mobile_board_disable_spi(void)
 {
-    SPCR = 0;
+    SPCR = SPSR = 0;
+}
+
+void mobile_board_enable_spi(void)
+{
     pinMode(PIN_SPI_MISO, OUTPUT);
     SPCR = _BV(SPE) | _BV(SPIE) | _BV(CPOL) | _BV(CPHA);
     SPDR = 0xD2;
@@ -65,15 +71,20 @@ void mobile_board_config_write(const unsigned char *src, const uintptr_t offset,
     for (size_t i = 0; i < size; i++) EEPROM.write(offset + i, src[i]);
 }
 
+void mobile_board_time_latch(void)
+{
+    millis_latch = millis();
+}
+
+bool mobile_board_time_check_ms(unsigned ms)
+{
+    return millis() > (millis_latch + (unsigned long)ms);
+}
+
 void setup()
 {
     Serial.begin(2000000);
     mobile_init();
-
-#ifdef DEBUG_SPI
-    buf_in = 0;
-    buf_out = 0;
-#endif
 
 #ifdef DEBUG_CMD
     // Redirect any printf to the Arduino serial.
