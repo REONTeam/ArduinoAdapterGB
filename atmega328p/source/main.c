@@ -89,7 +89,7 @@ bool mobile_board_time_check_ms(unsigned ms)
 {
     uint8_t old_SREG = SREG;
     cli();
-    bool ret = micros > micros_latch + ((uint32_t)ms * 1000);
+    bool ret = (micros - micros_latch) > ((uint32_t)ms * 1000);
     SREG = old_SREG;
     return ret;
 }

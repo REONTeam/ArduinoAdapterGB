@@ -1,0 +1,2 @@
+#!/bin/sh
+make name=mobile.exe CC=x86_64-w64-mingw32-gcc LDFLAGS=-static LDLIBS=-lws2_32 "$@"

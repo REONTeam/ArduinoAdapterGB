@@ -1,3 +1,7 @@
 atmega328p/build/
 atmega328p/*.hex
 atmega328p/*.lst
+bgb/build/
+bgb/config.bin
+bgb/mobile
+bgb/mobile.exe

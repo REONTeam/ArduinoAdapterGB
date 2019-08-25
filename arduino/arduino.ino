@@ -78,7 +78,7 @@ void mobile_board_time_latch(void)
 
 bool mobile_board_time_check_ms(unsigned ms)
 {
-    return millis() > (millis_latch + (unsigned long)ms);
+    return (millis() - millis_latch) > (unsigned long)ms;
 }
 
 void setup()
