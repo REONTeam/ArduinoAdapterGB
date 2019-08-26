@@ -211,8 +211,8 @@ int main(__attribute__((unused)) int argc, char *argv[])
         port = strtol(*argv++, NULL, 0);
     }
 
-    mobile_config = fopen(fname_config, "r+");
-    if (!mobile_config) mobile_config = fopen(fname_config, "w+");
+    mobile_config = fopen(fname_config, "r+b");
+    if (!mobile_config) mobile_config = fopen(fname_config, "w+b");
     if (!mobile_config) {
         perror("fopen");
         return EXIT_FAILURE;
