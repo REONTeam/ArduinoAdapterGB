@@ -140,13 +140,13 @@ uint32_t bgb_clock_latch;
 void mobile_board_config_read(unsigned char *dest, const uintptr_t offset, const size_t size)
 {
     fseek(mobile_config, offset, SEEK_SET);
-    fread(dest, 1, size, mobile_config);
+    return fread(dest, 1, size, mobile_config) == size;
 }
 
 void mobile_board_config_write(const unsigned char *src, const uintptr_t offset, const size_t size)
 {
     fseek(mobile_config, offset, SEEK_SET);
-    fwrite(src, 1, size, mobile_config);
+    return fwrite(src, 1, size, mobile_config) == size;
 }
 
 void mobile_board_time_latch(void)

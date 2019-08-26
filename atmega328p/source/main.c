@@ -67,14 +67,16 @@ void mobile_board_enable_spi(void)
     SPDR = 0xD2;
 }
 
-void mobile_board_config_read(unsigned char *dest, const uintptr_t offset, const size_t size)
+bool mobile_board_config_read(unsigned char *dest, const uintptr_t offset, const size_t size)
 {
     eeprom_read_block(dest, (void *)offset, size);
+    return true;
 }
 
-void mobile_board_config_write(const unsigned char *src, const uintptr_t offset, const size_t size)
+bool mobile_board_config_write(const unsigned char *src, const uintptr_t offset, const size_t size)
 {
     eeprom_write_block(src, (void *)offset, size);
+    return true;
 }
 
 void mobile_board_time_latch(void)

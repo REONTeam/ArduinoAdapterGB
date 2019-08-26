@@ -61,14 +61,16 @@ void mobile_board_enable_spi(void)
     SPDR = 0xD2;
 }
 
-void mobile_board_config_read(unsigned char *dest, const uintptr_t offset, const size_t size)
+bool mobile_board_config_read(unsigned char *dest, const uintptr_t offset, const size_t size)
 {
     for (size_t i = 0; i < size; i++) dest[i] = EEPROM.read(offset + i);
+    return true;
 }
 
-void mobile_board_config_write(const unsigned char *src, const uintptr_t offset, const size_t size)
+bool mobile_board_config_write(const unsigned char *src, const uintptr_t offset, const size_t size)
 {
     for (size_t i = 0; i < size; i++) EEPROM.write(offset + i, src[i]);
+    return true;
 }
 
 void mobile_board_time_latch(void)
