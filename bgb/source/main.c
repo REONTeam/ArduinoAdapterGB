@@ -13,6 +13,7 @@
 #include <netinet/tcp.h>
 #include <netdb.h>
 #elif defined(__WIN32__)
+// TODO: Fix winsock perror for windows
 #include <winsock2.h>
 #endif
 
@@ -43,7 +44,7 @@ int bgb_write(struct bgb_packet *buf)
 {
     ssize_t num = send(bgb_sock, (char *)buf, sizeof(struct bgb_packet), 0);
     if (num == -1) {
-        perror("write");
+        perror("send");
         exit(EXIT_FAILURE);
     }
     return num == sizeof(struct bgb_packet);
@@ -53,7 +54,7 @@ int bgb_read(struct bgb_packet *buf)
 {
     ssize_t num = recv(bgb_sock, (char *)buf, sizeof(struct bgb_packet), 0);
     if (num == -1) {
-        perror("read");
+        perror("recv");
         exit(EXIT_FAILURE);
     }
     return num == sizeof(struct bgb_packet);
@@ -132,18 +133,35 @@ void bgb_loop(void)
 #define A_UNUSED __attribute__((unused))
 void mobile_board_disable_spi(void) {}
 void mobile_board_enable_spi(void) {}
+bool mobile_board_tcp_connect(A_UNUSED const char *host, A_UNUSED const char *port)
+{
+    return true;
+}
+bool mobile_board_tcp_listen(A_UNUSED const char *port)
+{
+    return true;
+}
+void mobile_board_tcp_disconnect(void) {}
+bool mobile_board_tcp_send(A_UNUSED const void *data, A_UNUSED const unsigned size)
+{
+    return true;
+}
+int mobile_board_tcp_receive(A_UNUSED void *data)
+{
+    return -10;
+}
 #endif
 
 FILE *mobile_config;
 uint32_t bgb_clock_latch;
 
-void mobile_board_config_read(unsigned char *dest, const uintptr_t offset, const size_t size)
+bool mobile_board_config_read(unsigned char *dest, const uintptr_t offset, const size_t size)
 {
     fseek(mobile_config, offset, SEEK_SET);
     return fread(dest, 1, size, mobile_config) == size;
 }
 
-void mobile_board_config_write(const unsigned char *src, const uintptr_t offset, const size_t size)
+bool mobile_board_config_write(const unsigned char *src, const uintptr_t offset, const size_t size)
 {
     fseek(mobile_config, offset, SEEK_SET);
     return fwrite(src, 1, size, mobile_config) == size;
@@ -163,6 +181,7 @@ bool mobile_board_time_check_ms(unsigned ms)
 void *thread_mobile_loop(__attribute__((unused)) void *argp)
 {
     for (;;) {
+        // TODO: Use a mutex
         usleep(50000);
         mobile_loop();
         fflush(stdout);
@@ -225,14 +244,14 @@ int main(__attribute__((unused)) int argc, char *argv[])
     }
 
 #ifdef __WIN32__
-    WORD wVersionRequested = MAKEWORD(2, 2);
     WSADATA wsaData;
-    if (WSAStartup(wVersionRequested, &wsaData) != 0) {
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
         fprintf(stderr, "WSAStartup failed\n");
         return EXIT_FAILURE;
     }
 #endif
 
+    // TODO: Use getaddrinfo
     struct hostent *hostinfo = gethostbyname(host);
     if (!hostinfo) {
         fprintf(stderr, "Unknown host %s.\n", host);
@@ -251,11 +270,10 @@ int main(__attribute__((unused)) int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    int val = 1;
 #if defined(__unix__)
-    if (setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, (char *)&val, sizeof(val)) == -1) {
+    if (setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, (char *)&(int){1}, sizeof(int)) == -1) {
 #elif defined(__WIN32__)
-    if (setsockopt(sock, SOL_SOCKET, TCP_NODELAY, (char *)&val, sizeof(val)) == -1) {
+    if (setsockopt(sock, SOL_SOCKET, TCP_NODELAY, (char *)&(int){1}, sizeof(int)) == -1) {
 #endif
         perror("setsockopt");
         return EXIT_FAILURE;
@@ -277,7 +295,11 @@ int main(__attribute__((unused)) int argc, char *argv[])
     bgb_loop();
 
     pthread_cancel(mobile_thread);
+#if defined(__unix__)
     close(sock);
+#elif defined(__WIN32__)
+    closesocket(sock);
+#endif
 
 #ifdef __WIN32__
     WSACleanup();
