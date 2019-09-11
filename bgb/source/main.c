@@ -238,8 +238,8 @@ int main(__attribute__((unused)) int argc, char *argv[])
     }
     fseek(mobile_config, 0, SEEK_END);
 
-    // Make sure config file is at least MOBILE_CONFIG_DATA_SIZE bytes big
-    for (int i = ftell(mobile_config); i < MOBILE_CONFIG_DATA_SIZE; i++) {
+    // Make sure config file is at least MOBILE_CONFIG_SIZE bytes big
+    for (int i = ftell(mobile_config); i < MOBILE_CONFIG_SIZE; i++) {
         fputc(0, mobile_config);
     }
 
