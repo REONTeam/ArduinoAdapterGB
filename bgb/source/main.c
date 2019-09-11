@@ -133,11 +133,11 @@ void bgb_loop(void)
 #define A_UNUSED __attribute__((unused))
 void mobile_board_disable_spi(void) {}
 void mobile_board_enable_spi(void) {}
-bool mobile_board_tcp_connect(A_UNUSED const char *host, A_UNUSED const char *port)
+bool mobile_board_tcp_connect(A_UNUSED const unsigned char *host, A_UNUSED const unsigned port)
 {
     return true;
 }
-bool mobile_board_tcp_listen(A_UNUSED const char *port)
+bool mobile_board_tcp_listen(A_UNUSED const unsigned port)
 {
     return true;
 }
