@@ -58,38 +58,41 @@ struct mobile_adapter adapter;
 volatile uint32_t micros = 0;
 uint32_t micros_latch = 0;
 
-void mobile_board_disable_spi(void)
+#define A_UNUSED __attribute__((unused))
+
+void mobile_board_disable_spi(A_UNUSED void *user)
 {
     SPCR = SPSR = 0;
 }
 
-void mobile_board_enable_spi(void)
+void mobile_board_enable_spi(A_UNUSED void *user)
 {
     pinmode(PIN_SPI_MISO, OUTPUT);
     SPCR = _BV(SPE) | _BV(SPIE) | _BV(CPOL) | _BV(CPHA);
+    SPSR = 0;
     SPDR = 0xD2;
 }
 
-bool mobile_board_config_read(void *dest, const uintptr_t offset, const size_t size)
+bool mobile_board_config_read(A_UNUSED void *user, void *dest, const uintptr_t offset, const size_t size)
 {
     eeprom_read_block(dest, (void *)offset, size);
     return true;
 }
 
-bool mobile_board_config_write(const void *src, const uintptr_t offset, const size_t size)
+bool mobile_board_config_write(A_UNUSED void *user, const void *src, const uintptr_t offset, const size_t size)
 {
     eeprom_write_block(src, (void *)offset, size);
     return true;
 }
 
-void mobile_board_time_latch(void)
+void mobile_board_time_latch(A_UNUSED void *user)
 {
     ATOMIC_BLOCK(ATOMIC_FORCEON) {
         micros_latch = micros;
     }
 }
 
-bool mobile_board_time_check_ms(unsigned ms)
+bool mobile_board_time_check_ms(A_UNUSED void *user, unsigned ms)
 {
     bool ret;
     ATOMIC_BLOCK(ATOMIC_FORCEON) {
@@ -101,7 +104,7 @@ bool mobile_board_time_check_ms(unsigned ms)
 int main(void)
 {
     serial_init(2000000);
-    mobile_init(&adapter);
+    mobile_init(&adapter, NULL);
 
     // Set up timer 0
     TCNT0 = 0;

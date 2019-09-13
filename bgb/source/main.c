@@ -19,24 +19,29 @@
 
 #include "libmobile/debug_cmd.h"
 
-#ifdef __WIN32__
+#ifdef __GNUC__
 #define A_UNUSED __attribute__((unused))
-void mobile_board_disable_spi(void) {}
-void mobile_board_enable_spi(void) {}
-bool mobile_board_tcp_connect(A_UNUSED const unsigned char *host, A_UNUSED const unsigned port)
+#else
+#define A_UNUSED
+#endif
+
+#ifdef __WIN32__
+void mobile_board_disable_spi(A_UNUSED void *user) {}
+void mobile_board_enable_spi(A_UNUSED void *user) {}
+bool mobile_board_tcp_connect(A_UNUSED void *user, A_UNUSED const unsigned char *host, A_UNUSED const unsigned port)
 {
     return true;
 }
-bool mobile_board_tcp_listen(A_UNUSED const unsigned port)
+bool mobile_board_tcp_listen(A_UNUSED void *user, A_UNUSED const unsigned port)
 {
     return true;
 }
-void mobile_board_tcp_disconnect(void) {}
-bool mobile_board_tcp_send(A_UNUSED const void *data, A_UNUSED const unsigned size)
+void mobile_board_tcp_disconnect(A_UNUSED void *user) {}
+bool mobile_board_tcp_send(A_UNUSED void *user, A_UNUSED const void *data, A_UNUSED const unsigned size)
 {
     return true;
 }
-int mobile_board_tcp_receive(A_UNUSED void *data)
+int mobile_board_tcp_receive(A_UNUSED void *user, A_UNUSED void *data)
 {
     return -10;
 }
@@ -50,25 +55,25 @@ uint32_t bgb_clock_latch;
 // TODO: Implement serial enable/disable using a mutex
 // TODO: Implement TCP.
 
-bool mobile_board_config_read(void *dest, const uintptr_t offset, const size_t size)
+bool mobile_board_config_read(A_UNUSED void *user, void *dest, const uintptr_t offset, const size_t size)
 {
     fseek(mobile_config, offset, SEEK_SET);
     return fread(dest, 1, size, mobile_config) == size;
 }
 
-bool mobile_board_config_write(const void *src, const uintptr_t offset, const size_t size)
+bool mobile_board_config_write(A_UNUSED void *user, const void *src, const uintptr_t offset, const size_t size)
 {
     fseek(mobile_config, offset, SEEK_SET);
     return fwrite(src, 1, size, mobile_config) == size;
 }
 
-void mobile_board_time_latch(void)
+void mobile_board_time_latch(A_UNUSED void *user)
 {
     // TODO: Use a mutex to access bgb_clock
     bgb_clock_latch = bgb_clock;
 }
 
-bool mobile_board_time_check_ms(unsigned ms)
+bool mobile_board_time_check_ms(A_UNUSED void *user, unsigned ms)
 {
     return ((bgb_clock - bgb_clock_latch) & 0x7FFFFFFF) >
         (uint32_t)((double)ms * (1 << 21) / 1000);
@@ -290,7 +295,7 @@ int main(__attribute__((unused)) int argc, char *argv[])
     }
 
     pthread_t mobile_thread;
-    mobile_init(&adapter);
+    mobile_init(&adapter, NULL);
     if (pthread_create(&mobile_thread, NULL, thread_mobile_loop, NULL)) {
         fprintf(stderr, "Failed to create thread.\n");
         return EXIT_FAILURE;

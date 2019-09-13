@@ -51,36 +51,39 @@ FILE serial_stdout;
 
 unsigned long millis_latch = 0;
 
-void mobile_board_disable_spi(void)
+#define A_UNUSED __attribute__((unused))
+
+void mobile_board_disable_spi(A_UNUSED void *user)
 {
     SPCR = SPSR = 0;
 }
 
-void mobile_board_enable_spi(void)
+void mobile_board_enable_spi(A_UNUSED void *user)
 {
     pinMode(PIN_SPI_MISO, OUTPUT);
     SPCR = _BV(SPE) | _BV(SPIE) | _BV(CPOL) | _BV(CPHA);
+    SPSR = 0;
     SPDR = 0xD2;
 }
 
-bool mobile_board_config_read(void *dest, const uintptr_t offset, const size_t size)
+bool mobile_board_config_read(A_UNUSED void *user, void *dest, const uintptr_t offset, const size_t size)
 {
     for (size_t i = 0; i < size; i++) ((char *)dest)[i] = EEPROM.read(offset + i);
     return true;
 }
 
-bool mobile_board_config_write(const void *src, const uintptr_t offset, const size_t size)
+bool mobile_board_config_write(A_UNUSED void *user, const void *src, const uintptr_t offset, const size_t size)
 {
     for (size_t i = 0; i < size; i++) EEPROM.write(offset + i, ((char *)src)[i]);
     return true;
 }
 
-void mobile_board_time_latch(void)
+void mobile_board_time_latch(A_UNUSED void *user)
 {
     millis_latch = millis();
 }
 
-bool mobile_board_time_check_ms(unsigned ms)
+bool mobile_board_time_check_ms(A_UNUSED void *user, unsigned ms)
 {
     return (millis() - millis_latch) > (unsigned long)ms;
 }
@@ -88,7 +91,7 @@ bool mobile_board_time_check_ms(unsigned ms)
 void setup()
 {
     Serial.begin(2000000);
-    mobile_init(&adapter);
+    mobile_init(&adapter, NULL);
 
 #ifdef DEBUG_CMD
     // Redirect any printf to the Arduino serial.
