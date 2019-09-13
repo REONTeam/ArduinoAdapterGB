@@ -41,6 +41,8 @@ unsigned char buffer_get()
 char last_SPDR = 0xD2;
 #endif
 
+struct mobile_adapter adapter;
+
 #ifdef DEBUG_CMD
 int serial_putchar(char c, FILE *f) { return Serial.write(c); }
 FILE serial_stdout;
@@ -61,15 +63,15 @@ void mobile_board_enable_spi(void)
     SPDR = 0xD2;
 }
 
-bool mobile_board_config_read(unsigned char *dest, const uintptr_t offset, const size_t size)
+bool mobile_board_config_read(void *dest, const uintptr_t offset, const size_t size)
 {
-    for (size_t i = 0; i < size; i++) dest[i] = EEPROM.read(offset + i);
+    for (size_t i = 0; i < size; i++) ((char *)dest)[i] = EEPROM.read(offset + i);
     return true;
 }
 
-bool mobile_board_config_write(const unsigned char *src, const uintptr_t offset, const size_t size)
+bool mobile_board_config_write(const void *src, const uintptr_t offset, const size_t size)
 {
-    for (size_t i = 0; i < size; i++) EEPROM.write(offset + i, src[i]);
+    for (size_t i = 0; i < size; i++) EEPROM.write(offset + i, ((char *)src)[i]);
     return true;
 }
 
@@ -86,7 +88,7 @@ bool mobile_board_time_check_ms(unsigned ms)
 void setup()
 {
     Serial.begin(2000000);
-    mobile_init();
+    mobile_init(&adapter);
 
 #ifdef DEBUG_CMD
     // Redirect any printf to the Arduino serial.
@@ -101,14 +103,13 @@ void setup()
 
 void loop()
 {
-    mobile_loop();
+    mobile_loop(&adapter);
 
 #ifdef DEBUG_SPI
     if (!buffer_isempty()) {
-        Serial.print("In ");
         Serial.print(buffer_get(), HEX);
         while (buffer_isempty());
-        Serial.print(" Out ");
+        Serial.print("\t");
         Serial.println(buffer_get(), HEX);
     }
 #endif
@@ -119,8 +120,8 @@ ISR (SPI_STC_vect)
 #ifdef DEBUG_SPI
     if (!buffer_isfull()) buffer_put(SPDR);
     if (!buffer_isfull()) buffer_put(last_SPDR);
-    SPDR = last_SPDR = mobile_transfer(SPDR);
+    SPDR = last_SPDR = mobile_transfer(&adapter, SPDR);
 #else
-    SPDR = mobile_transfer(SPDR);
+    SPDR = mobile_transfer(&adapter, SPDR);
 #endif
 }

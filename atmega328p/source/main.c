@@ -48,6 +48,8 @@ unsigned char buffer_get(void)
 char last_SPDR = 0xD2;
 #endif
 
+struct mobile_adapter adapter;
+
 #ifdef DEBUG_CMD
 #include "libmobile/debug_cmd.h"
 #endif
@@ -67,13 +69,13 @@ void mobile_board_enable_spi(void)
     SPDR = 0xD2;
 }
 
-bool mobile_board_config_read(unsigned char *dest, const uintptr_t offset, const size_t size)
+bool mobile_board_config_read(void *dest, const uintptr_t offset, const size_t size)
 {
     eeprom_read_block(dest, (void *)offset, size);
     return true;
 }
 
-bool mobile_board_config_write(const unsigned char *src, const uintptr_t offset, const size_t size)
+bool mobile_board_config_write(const void *src, const uintptr_t offset, const size_t size)
 {
     eeprom_write_block(src, (void *)offset, size);
     return true;
@@ -99,7 +101,7 @@ bool mobile_board_time_check_ms(unsigned ms)
 int main(void)
 {
     serial_init(2000000);
-    mobile_init();
+    mobile_init(&adapter);
 
     // Set up timer 0
     TCNT0 = 0;
@@ -113,13 +115,13 @@ int main(void)
 #endif
 
     for (;;) {
-        mobile_loop();
+        mobile_loop(&adapter);
 
 #ifdef DEBUG_SPI
         if (!buffer_isempty()) {
-            printf("In %02X ", buffer_get());
+            printf("%02X\t", buffer_get());
             while (buffer_isempty());
-            printf("Out %02X\r\n", buffer_get());
+            printf("%02X\r\n", buffer_get());
         }
 #endif
     }
@@ -130,9 +132,9 @@ ISR (SPI_STC_vect)
 #ifdef DEBUG_SPI
     if (!buffer_isfull()) buffer_put(SPDR);
     if (!buffer_isfull()) buffer_put(last_SPDR);
-    SPDR = last_SPDR = mobile_transfer(SPDR);
+    SPDR = last_SPDR = mobile_transfer(&adapter, SPDR);
 #else
-    SPDR = mobile_transfer(SPDR);
+    SPDR = mobile_transfer(&adapter, SPDR);
 #endif
 }
 

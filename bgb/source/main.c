@@ -19,6 +19,71 @@
 
 #include "libmobile/debug_cmd.h"
 
+#ifdef __WIN32__
+#define A_UNUSED __attribute__((unused))
+void mobile_board_disable_spi(void) {}
+void mobile_board_enable_spi(void) {}
+bool mobile_board_tcp_connect(A_UNUSED const unsigned char *host, A_UNUSED const unsigned port)
+{
+    return true;
+}
+bool mobile_board_tcp_listen(A_UNUSED const unsigned port)
+{
+    return true;
+}
+void mobile_board_tcp_disconnect(void) {}
+bool mobile_board_tcp_send(A_UNUSED const void *data, A_UNUSED const unsigned size)
+{
+    return true;
+}
+int mobile_board_tcp_receive(A_UNUSED void *data)
+{
+    return -10;
+}
+#endif
+
+struct mobile_adapter adapter;
+FILE *mobile_config;
+volatile uint32_t bgb_clock;
+uint32_t bgb_clock_latch;
+
+// TODO: Implement serial enable/disable using a mutex
+// TODO: Implement TCP.
+
+bool mobile_board_config_read(void *dest, const uintptr_t offset, const size_t size)
+{
+    fseek(mobile_config, offset, SEEK_SET);
+    return fread(dest, 1, size, mobile_config) == size;
+}
+
+bool mobile_board_config_write(const void *src, const uintptr_t offset, const size_t size)
+{
+    fseek(mobile_config, offset, SEEK_SET);
+    return fwrite(src, 1, size, mobile_config) == size;
+}
+
+void mobile_board_time_latch(void)
+{
+    // TODO: Use a mutex to access bgb_clock
+    bgb_clock_latch = bgb_clock;
+}
+
+bool mobile_board_time_check_ms(unsigned ms)
+{
+    return ((bgb_clock - bgb_clock_latch) & 0x7FFFFFFF) >
+        (uint32_t)((double)ms * (1 << 21) / 1000);
+}
+
+void *thread_mobile_loop(__attribute__((unused)) void *argp)
+{
+    for (;;) {
+        // TODO: Use a mutex
+        usleep(50000);
+        mobile_loop(&adapter);
+        fflush(stdout);
+    }
+}
+
 enum bgb_cmd {
     BGB_CMD_VERSION = 1,
     BGB_CMD_JOYPAD = 101,
@@ -37,7 +102,6 @@ struct bgb_packet {
     uint32_t timestamp;
 };
 
-volatile uint32_t bgb_clock;
 int bgb_sock;
 
 int bgb_write(struct bgb_packet *buf)
@@ -95,7 +159,7 @@ void bgb_loop(void)
 
         case BGB_CMD_SYNC1:
             packet.cmd = BGB_CMD_SYNC2;
-            transfer_cur = mobile_transfer(packet.b2);
+            transfer_cur = mobile_transfer(&adapter, packet.b2);
             packet.b2 = transfer_last;
             transfer_last = transfer_cur;
             packet.b3 = 0x80;
@@ -126,65 +190,6 @@ void bgb_loop(void)
             fprintf(stderr, "Unknown BGB command: %d (%02X %02X %02X) @ %d\n",
                     packet.cmd, packet.b2, packet.b3, packet.b4, packet.timestamp);
         }
-    }
-}
-
-#ifdef __WIN32__
-#define A_UNUSED __attribute__((unused))
-void mobile_board_disable_spi(void) {}
-void mobile_board_enable_spi(void) {}
-bool mobile_board_tcp_connect(A_UNUSED const unsigned char *host, A_UNUSED const unsigned port)
-{
-    return true;
-}
-bool mobile_board_tcp_listen(A_UNUSED const unsigned port)
-{
-    return true;
-}
-void mobile_board_tcp_disconnect(void) {}
-bool mobile_board_tcp_send(A_UNUSED const void *data, A_UNUSED const unsigned size)
-{
-    return true;
-}
-int mobile_board_tcp_receive(A_UNUSED void *data)
-{
-    return -10;
-}
-#endif
-
-FILE *mobile_config;
-uint32_t bgb_clock_latch;
-
-bool mobile_board_config_read(unsigned char *dest, const uintptr_t offset, const size_t size)
-{
-    fseek(mobile_config, offset, SEEK_SET);
-    return fread(dest, 1, size, mobile_config) == size;
-}
-
-bool mobile_board_config_write(const unsigned char *src, const uintptr_t offset, const size_t size)
-{
-    fseek(mobile_config, offset, SEEK_SET);
-    return fwrite(src, 1, size, mobile_config) == size;
-}
-
-void mobile_board_time_latch(void)
-{
-    bgb_clock_latch = bgb_clock;
-}
-
-bool mobile_board_time_check_ms(unsigned ms)
-{
-    return ((bgb_clock - bgb_clock_latch) & 0x7FFFFFFF) >
-        (uint32_t)((double)ms * (1 << 21) / 1000);
-}
-
-void *thread_mobile_loop(__attribute__((unused)) void *argp)
-{
-    for (;;) {
-        // TODO: Use a mutex
-        usleep(50000);
-        mobile_loop();
-        fflush(stdout);
     }
 }
 
@@ -285,7 +290,7 @@ int main(__attribute__((unused)) int argc, char *argv[])
     }
 
     pthread_t mobile_thread;
-    mobile_init();
+    mobile_init(&adapter);
     if (pthread_create(&mobile_thread, NULL, thread_mobile_loop, NULL)) {
         fprintf(stderr, "Failed to create thread.\n");
         return EXIT_FAILURE;
