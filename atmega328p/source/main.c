@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <avr/interrupt.h>
 #include <avr/eeprom.h>
+#include <util/atomic.h>
 #include "libmobile/mobile.h"
 
 #include "utils.h"
@@ -83,18 +84,17 @@ bool mobile_board_config_write(const void *src, const uintptr_t offset, const si
 
 void mobile_board_time_latch(void)
 {
-	uint8_t old_SREG = SREG;
-    cli();
-    micros_latch = micros;
-    SREG = old_SREG;
+    ATOMIC_BLOCK(ATOMIC_FORCEON) {
+        micros_latch = micros;
+    }
 }
 
 bool mobile_board_time_check_ms(unsigned ms)
 {
-    uint8_t old_SREG = SREG;
-    cli();
-    bool ret = (micros - micros_latch) > ((uint32_t)ms * 1000);
-    SREG = old_SREG;
+    bool ret;
+    ATOMIC_BLOCK(ATOMIC_FORCEON) {
+        ret = (micros - micros_latch) > ((uint32_t)ms * 1000);
+    }
     return ret;
 }
 
