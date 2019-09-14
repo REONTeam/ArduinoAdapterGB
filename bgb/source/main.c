@@ -26,8 +26,8 @@
 #endif
 
 #ifdef __WIN32__
-void mobile_board_disable_spi(A_UNUSED void *user) {}
-void mobile_board_enable_spi(A_UNUSED void *user) {}
+void mobile_board_serial_disable(A_UNUSED void *user) {}
+void mobile_board_serial_enable(A_UNUSED void *user) {}
 bool mobile_board_tcp_connect(A_UNUSED void *user, A_UNUSED const unsigned char *host, A_UNUSED const unsigned port)
 {
     return true;

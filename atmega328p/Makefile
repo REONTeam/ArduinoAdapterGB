@@ -12,7 +12,7 @@ OBJCOPY := avr-objcopy
 OBJDUMP := avr-objdump
 AVRDUDE := avrdude
 
-OPTIM := -Os -g -fdata-sections -ffunction-sections -flto -fuse-linker-plugin -fipa-pta #-fgraphite-identity -floop-nest-optimize
+OPTIM := -Os -g -fdata-sections -ffunction-sections -flto -fuse-linker-plugin -fipa-pta -fshort-enums #-fgraphite-identity -floop-nest-optimize
 CFLAGS := $(OPTIM) -Wall -Wextra -std=c17 -DF_CPU=16000000L
 LDFLAGS := $(OPTIM) -Wl,--gc-sections -Wl,--print-gc-sections
 

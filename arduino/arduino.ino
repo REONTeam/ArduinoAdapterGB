@@ -53,12 +53,12 @@ unsigned long millis_latch = 0;
 
 #define A_UNUSED __attribute__((unused))
 
-void mobile_board_disable_spi(A_UNUSED void *user)
+void mobile_board_serial_disable(A_UNUSED void *user)
 {
     SPCR = SPSR = 0;
 }
 
-void mobile_board_enable_spi(A_UNUSED void *user)
+void mobile_board_serial_enable(A_UNUSED void *user)
 {
     pinMode(PIN_SPI_MISO, OUTPUT);
     SPCR = _BV(SPE) | _BV(SPIE) | _BV(CPOL) | _BV(CPHA);
