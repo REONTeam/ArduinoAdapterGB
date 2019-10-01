@@ -5,8 +5,8 @@ dir_build := build
 
 CFLAGS := -O0 -g -Wall -Wextra -std=gnu17 $(CFLAGS)
 
-CFLAGS += #$(shell pkg-config --cflags ...)
-LDLIBS += -lpthread #$(shell pkg-config --libs ...)
+CFLAGS += -pthread #$(shell pkg-config --cflags ...)
+LDLIBS += -pthread #$(shell pkg-config --libs ...)
 
 SANIT := -fsanitize=address -fsanitize=pointer-compare -fsanitize=pointer-subtract -fsanitize=leak -fsanitize=undefined
 OPTIM := -Os -fdata-sections -ffunction-sections -flto -fuse-linker-plugin -fipa-pta -Wl,--gc-sections -Wl,--print-gc-sections #-fgraphite-identity -floop-nest-optimize
@@ -33,6 +33,10 @@ optim: CFLAGS += $(OPTIM)
 optim: LDFLAGS += $(OPTIM)
 optim: $(name)
 	strip --strip-all --strip-unneeded $(name)
+
+.PHONY: iwyu
+iwyu:
+	$(MAKE) -k CC="include-what-you-use -Xiwyu --mapping_file=iwyu.imp -Xiwyu --no_fwd_decls" $(name)
 
 $(name): $(objects)
 	$(LINK.o) $^ $(LOADLIBES) $(LDLIBS) -o $@

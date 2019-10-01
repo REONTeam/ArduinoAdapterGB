@@ -1,0 +1,5 @@
+[
+    {symbol: ["ssize_t", "public", "<stddef.h>", "public"]},
+    {include: ["\"libmobile/commands.h\"", "private", "\"libmobile/mobile.h\"", "public"]},
+    {include: ["\"libmobile/serial.h\"", "private", "\"libmobile/mobile.h\"", "public"]},
+]
