@@ -1,48 +1,11 @@
 #include "bgblink.h"
 
-#include <errno.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>
-#include <string.h>
 #include <stdio.h>
 
-#if defined(__unix__)
-#include <sys/socket.h>
-#elif defined(__WIN32__)
-// TODO: Fix winsock perror for windows
-#define UNICODE
-#include <winsock2.h>
-#else
-#error "Unsupported OS"
-#endif
-
-void socket_perror(const char *func)
-{
-    if (func) fprintf(stderr, "%s:", func);
-#if defined(__unix__)
-    char error[0x100];
-    if (strerror_r(errno, error, sizeof(error))) {
-        putc('\n', stderr);
-        return;
-    }
-    fprintf(stderr, " %s\n", error);
-#elif defined(__WIN32__)
-    LPWSTR error = NULL;
-    if (!FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM,
-                NULL,
-                WSAGetLastError(),
-                MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-                (LPWSTR)&error,
-                0,
-                NULL)) {
-        putc('\n', stderr);
-        return;
-    }
-    fwprintf(stderr, L" %s\n", error);
-    LocalFree(error);
-#endif
-}
+#include "socket.h"
 
 enum bgb_cmd {
     BGB_CMD_VERSION = 1,

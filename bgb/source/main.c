@@ -9,21 +9,14 @@
 #include <pthread.h>
 #include "libmobile/mobile.h"
 
-#if defined(__unix__)
-#include <netdb.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
-#elif defined(__WIN32__)
-// TODO: Fix winsock perror for windows
-#define UNICODE
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#else
-#error "Unsupported OS"
-#endif
-
+#include "socket.h"
 #include "bgblink.h"
+
+#ifdef __GNUC__
+#define A_UNUSED __attribute__((unused))
+#else
+#define A_UNUSED
+#endif
 
 #include "libmobile/debug_cmd.h"  // IWYU pragma: keep
 
@@ -33,39 +26,11 @@ struct mobile_user {
     pthread_cond_t cond;
     struct mobile_adapter adapter;
     enum mobile_action action;
-    FILE *config;
     _Atomic uint32_t bgb_clock;
     _Atomic uint32_t bgb_clock_latch;
+    FILE *config;
+    int socket;
 };
-
-#ifdef __GNUC__
-#define A_UNUSED __attribute__((unused))
-#else
-#define A_UNUSED
-#endif
-
-#ifdef __WIN32__
-bool mobile_board_tcp_connect(A_UNUSED void *user, A_UNUSED const unsigned char *host, A_UNUSED const unsigned port)
-{
-    return true;
-}
-bool mobile_board_tcp_listen(A_UNUSED void *user, A_UNUSED const unsigned port)
-{
-    return true;
-}
-void mobile_board_tcp_disconnect(A_UNUSED void *user) {}
-bool mobile_board_tcp_send(A_UNUSED void *user, A_UNUSED const void *data, A_UNUSED const unsigned size)
-{
-    return true;
-}
-int mobile_board_tcp_receive(A_UNUSED void *user, A_UNUSED void *data)
-{
-    return -10;
-}
-#endif
-
-// TODO: Implement serial enable/disable using a mutex
-// TODO: Implement TCP.
 
 void mobile_board_serial_disable(void *user)
 {
@@ -107,6 +72,97 @@ bool mobile_board_time_check_ms(void *user, unsigned ms)
     return ret;
 }
 
+bool mobile_board_tcp_connect(void *user, const unsigned char *host, const unsigned port)
+{
+    struct mobile_user *mobile = (struct mobile_user *)user;
+
+    char s_host[4 * 4 + 1];
+    char s_port[6];
+    sprintf(s_host, "%hhu.%hhu.%hhu.%hhu", host[0], host[1], host[2], host[3]);
+    sprintf(s_port, "%u", port & 0xFFFF);
+
+    fprintf(stderr, "Connecting to: %s.%s\n", s_host, s_port);
+    int sock = socket_connect(s_host, s_port);
+    if (sock == -1) {
+		fprintf(stderr, "Could not connect (%s:%s):", s_host, s_port);
+        socket_perror(NULL);
+        return false;
+    }
+
+    mobile->socket = sock;
+    return true;
+}
+
+bool mobile_board_tcp_listen(void *user, const unsigned port)
+{
+    struct mobile_user *mobile = (struct mobile_user *)user;
+
+    if (mobile->socket == -1) {
+        char s_port[6];
+        sprintf(s_port, "%u", port & 0xFFFF);
+
+        int sock = socket_bind(s_port);
+        if (sock == -1) {
+            fprintf(stderr, "Could not bind (%s):", s_port);
+            socket_perror(NULL);
+            return false;
+        }
+
+		if (listen(sock, 1) == -1) {
+			socket_perror("listen");
+			close(sock);
+			return false;
+		}
+
+        mobile->socket = sock;
+    }
+
+    if (socket_hasdata(mobile->socket, 1000000) <= 0) return false;
+	int sock = accept(mobile->socket, NULL, NULL);
+	if (sock == -1) {
+		socket_perror("accept");
+		return false;
+	}
+	close(mobile->socket);
+	mobile->socket = sock;
+
+    return true;
+}
+
+void mobile_board_tcp_disconnect(void *user)
+{
+    struct mobile_user *mobile = (struct mobile_user *)user;
+    socket_close(mobile->socket);
+    mobile->socket = -1;
+}
+
+bool mobile_board_tcp_send(void *user, const void *data, const unsigned size)
+{
+    struct mobile_user *mobile = (struct mobile_user *)user;
+	if (send(mobile->socket, data, size, 0) == -1) {
+		socket_perror("send");
+		return false;
+	}
+    return true;
+}
+
+int mobile_board_tcp_receive(void *user, void *data)
+{
+    struct mobile_user *mobile = (struct mobile_user *)user;
+#if defined(__unix__)
+	ssize_t len = recv(mobile->socket, data, MOBILE_MAX_TCP_SIZE, MSG_DONTWAIT);
+#elif defined(__WIN32__)
+    if (!socket_hasdata(mobile->socket, 0)) return 0;
+	ssize_t len = recv(mobile->socket, data, MOBILE_MAX_TCP_SIZE, 0);
+#endif
+	if (len != -1) return len;
+	if (errno != EAGAIN && errno != EWOULDBLOCK) {
+		socket_perror("recv");
+		return -1;
+	}
+    return 0;
+}
+
 void *thread_mobile_loop(void *user)
 {
     struct mobile_user *mobile = (struct mobile_user *)user;
@@ -128,13 +184,13 @@ void bgb_loop_action(struct mobile_user *mobile)
     // If the thread isn't doing anything, queue up the next action.
     if (pthread_mutex_trylock(&mobile->mutex_cond) != 0) return;
     if (mobile->action == MOBILE_ACTION_NONE) {
-        mobile->action = mobile_action_get(&mobile->adapter);
+        enum mobile_action action = mobile_action_get(&mobile->adapter);
 
         // MOBILE_ACTION_RESET_SERIAL is not relevant to an emulator,
         //   since the serial connection can't desync.
-        if (mobile->action != MOBILE_ACTION_NONE &&
-                mobile->action != MOBILE_ACTION_RESET_SERIAL) {
-            //mobile->action = action;
+        if (action != MOBILE_ACTION_NONE &&
+                action != MOBILE_ACTION_RESET_SERIAL) {
+            mobile->action = action;
             pthread_cond_signal(&mobile->cond);
         }
     }
@@ -203,23 +259,17 @@ int main(A_UNUSED int argc, char *argv[])
         port = *argv++;
     }
 
-    struct mobile_user *mobile = malloc(sizeof(struct mobile_user));
-    if (!mobile) {
-        perror("malloc");
-        return EXIT_FAILURE;
-    }
-
-    mobile->config = fopen(fname_config, "r+b");
-    if (!mobile->config) mobile->config = fopen(fname_config, "w+b");
-    if (!mobile->config) {
+    FILE *config = fopen(fname_config, "r+b");
+    if (!config) config = fopen(fname_config, "w+b");
+    if (!config) {
         perror("fopen");
         return EXIT_FAILURE;
     }
-    fseek(mobile->config, 0, SEEK_END);
+    fseek(config, 0, SEEK_END);
 
     // Make sure config file is at least MOBILE_CONFIG_SIZE bytes big
-    for (int i = ftell(mobile->config); i < MOBILE_CONFIG_SIZE; i++) {
-        fputc(0, mobile->config);
+    for (int i = ftell(config); i < MOBILE_CONFIG_SIZE; i++) {
+        fputc(0, config);
     }
 
 #ifdef __WIN32__
@@ -230,50 +280,30 @@ int main(A_UNUSED int argc, char *argv[])
     }
 #endif
 
-	struct addrinfo hints = {
-		.ai_family = AF_UNSPEC,
-		.ai_socktype = SOCK_STREAM,
-        .ai_protocol = IPPROTO_TCP
-	};
-	struct addrinfo *result;
-	int gai_errno = getaddrinfo(host, port, &hints, &result);
-	if (gai_errno) {
-#if defined(__unix__)
-		fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(gai_errno));
-#elif defined(__WIN32__)
-        fprintf(stderr, "getaddrinfo: Error %d", gai_errno);
-        socket_perror(NULL);
-#endif
-		return false;
-	}
-
-	int sock;
-	struct addrinfo *info;
-	for (info = result; info != NULL; info = info->ai_next) {
-        errno = 0;
-		sock = socket(info->ai_family, info->ai_socktype, info->ai_protocol);
-		if (sock == -1) continue;
-		if (connect(sock, info->ai_addr, info->ai_addrlen) != -1) break;
-		close(sock);
-	}
-	freeaddrinfo(result);
-	if (!info) {
+    int sock = socket_connect(host, port);
+    if (sock == -1) {
 		fprintf(stderr, "Could not connect (%s:%s):", host, port);
         socket_perror(NULL);
-		return false;
-	}
+        return EXIT_FAILURE;
+    }
 
     if (setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, (char *)&(int){1}, sizeof(int)) == -1) {
         socket_perror("setsockopt");
         return EXIT_FAILURE;
     }
 
+    struct mobile_user *mobile = malloc(sizeof(struct mobile_user));
+    if (!mobile) {
+        perror("malloc");
+        return EXIT_FAILURE;
+    }
     mobile->mutex_serial = (pthread_mutex_t)PTHREAD_MUTEX_INITIALIZER;
     mobile->mutex_cond = (pthread_mutex_t)PTHREAD_MUTEX_INITIALIZER;
     mobile->cond = (pthread_cond_t)PTHREAD_COND_INITIALIZER;
-
-    mobile->bgb_clock = mobile->bgb_clock_latch = 0;
     mobile->action = MOBILE_ACTION_NONE;
+    mobile->bgb_clock = mobile->bgb_clock_latch = 0;
+    mobile->config = config;
+    mobile->socket = -1;
     mobile_init(&mobile->adapter, mobile);
 
     pthread_t mobile_thread;
@@ -285,12 +315,15 @@ int main(A_UNUSED int argc, char *argv[])
     bgb_loop(sock, bgb_loop_transfer, bgb_loop_timestamp, mobile);
     pthread_cancel(mobile_thread);
 
-#if defined(__unix__)
-    close(sock);
-#elif defined(__WIN32__)
-    closesocket(sock);
+    if (mobile->socket) socket_close(mobile->socket);
+    socket_close(sock);
+
+#ifdef __WIN32__
     WSACleanup();
 #endif
+
+    fclose(mobile->config);
+    free(mobile);
 
     return EXIT_SUCCESS;
 }
