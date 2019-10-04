@@ -1,2 +1,2 @@
 #!/bin/sh
-make name=mobile.exe CC=x86_64-w64-mingw32-gcc LDFLAGS=-static LDLIBS=-lws2_32 CFLAGS=-Wno-format "$@"
+CC="${CC:-x86_64-w64-mingw32-gcc}" LDFLAGS="-static $LDFLAGS" LDLIBS="-lws2_32 $LDLIBS" CFLAGS="-Wno-format $CFLAGS" make name=mobile.exe "$@"

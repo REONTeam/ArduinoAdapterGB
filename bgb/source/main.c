@@ -81,7 +81,7 @@ bool mobile_board_tcp_connect(void *user, const unsigned char *host, const unsig
     sprintf(s_host, "%hhu.%hhu.%hhu.%hhu", host[0], host[1], host[2], host[3]);
     sprintf(s_port, "%u", port & 0xFFFF);
 
-    fprintf(stderr, "Connecting to: %s.%s\n", s_host, s_port);
+    fprintf(stderr, "Connecting to: %s:%s\n", s_host, s_port);
     int sock = socket_connect(s_host, s_port);
     if (sock == -1) {
 		fprintf(stderr, "Could not connect (%s:%s):", s_host, s_port);
