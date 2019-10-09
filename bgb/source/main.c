@@ -78,10 +78,9 @@ bool mobile_board_tcp_connect(void *user, const unsigned char *host, const unsig
 
     char s_host[4 * 4 + 1];
     char s_port[6];
-    sprintf(s_host, "%hhu.%hhu.%hhu.%hhu", host[0], host[1], host[2], host[3]);
+    sprintf(s_host, "%u.%u.%u.%u", host[0], host[1], host[2], host[3]);
     sprintf(s_port, "%u", port & 0xFFFF);
 
-    fprintf(stderr, "Connecting to: %s:%s\n", s_host, s_port);
     int sock = socket_connect(s_host, s_port);
     if (sock == -1) {
 		fprintf(stderr, "Could not connect (%s:%s):", s_host, s_port);
@@ -97,26 +96,29 @@ bool mobile_board_tcp_listen(void *user, const unsigned port)
 {
     struct mobile_user *mobile = (struct mobile_user *)user;
 
-    if (mobile->socket == -1) {
-        char s_port[6];
-        sprintf(s_port, "%u", port & 0xFFFF);
+    char s_port[6];
+    sprintf(s_port, "%u", port & 0xFFFF);
 
-        int sock = socket_bind(s_port);
-        if (sock == -1) {
-            fprintf(stderr, "Could not bind (%s):", s_port);
-            socket_perror(NULL);
-            return false;
-        }
-
-		if (listen(sock, 1) == -1) {
-			socket_perror("listen");
-			close(sock);
-			return false;
-		}
-
-        mobile->socket = sock;
+    int sock = socket_bind(s_port);
+    if (sock == -1) {
+        fprintf(stderr, "Could not bind (%s):", s_port);
+        socket_perror(NULL);
+        return false;
     }
 
+    if (listen(sock, 1) == -1) {
+        socket_perror("listen");
+        close(sock);
+        return false;
+    }
+
+    mobile->socket = sock;
+    return true;
+}
+
+bool mobile_board_tcp_accept(void *user)
+{
+    struct mobile_user *mobile = (struct mobile_user *)user;
     if (socket_hasdata(mobile->socket, 1000000) <= 0) return false;
 	int sock = accept(mobile->socket, NULL, NULL);
 	if (sock == -1) {
@@ -125,7 +127,6 @@ bool mobile_board_tcp_listen(void *user, const unsigned port)
 	}
 	close(mobile->socket);
 	mobile->socket = sock;
-
     return true;
 }
 
@@ -314,7 +315,7 @@ int main(A_UNUSED int argc, char *argv[])
     bgb_loop(sock, bgb_loop_transfer, bgb_loop_timestamp, mobile);
     pthread_cancel(mobile_thread);
 
-    if (mobile->socket) socket_close(mobile->socket);
+    if (mobile->socket != -1) socket_close(mobile->socket);
     socket_close(sock);
 
 #ifdef __WIN32__
