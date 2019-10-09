@@ -50,8 +50,11 @@ int socket_hasdata(int socket, int delay)
     fd_set rfds;
     FD_ZERO(&rfds);
     FD_SET(socket, &rfds);
+    fd_set exfds;
+    FD_ZERO(&exfds);
+    FD_SET(socket, &exfds);
     struct timeval tv = {.tv_sec = delay / 1000000, .tv_usec = delay % 1000000};
-    int sel = select(socket + 1, &rfds, NULL, NULL, &tv);
+    int sel = select(socket + 1, &rfds, NULL, &exfds, &tv);
     if (sel == -1) {
         perror("select");
     }

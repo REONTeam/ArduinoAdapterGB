@@ -149,18 +149,17 @@ bool mobile_board_tcp_send(void *user, const void *data, const unsigned size)
 int mobile_board_tcp_receive(void *user, void *data)
 {
     struct mobile_user *mobile = (struct mobile_user *)user;
-#if defined(__unix__)
-	ssize_t len = recv(mobile->socket, data, MOBILE_MAX_TCP_SIZE, MSG_DONTWAIT);
-#elif defined(__WIN32__)
     if (!socket_hasdata(mobile->socket, 0)) return 0;
-	ssize_t len = recv(mobile->socket, data, MOBILE_MAX_TCP_SIZE, 0);
-#endif
-	if (len != -1) return len;
-	if (errno != EAGAIN && errno != EWOULDBLOCK) {
-		socket_perror("recv");
-		return -1;
-	}
-    return 0;
+    ssize_t len;
+    if (data) {
+        len = recv(mobile->socket, data, MOBILE_MAX_TCP_SIZE, 0);
+    } else {
+        char c;
+        len = recv(mobile->socket, &c, 1, MSG_PEEK);
+    }
+    if (!len) return -1;
+    if (len == -1) socket_perror("recv");
+    return len;
 }
 
 void *thread_mobile_loop(void *user)
