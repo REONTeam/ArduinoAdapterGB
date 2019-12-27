@@ -82,11 +82,11 @@ int socket_connect(const char *host, const char *port)
 
 	int sock;
 	struct addrinfo *info;
-	for (info = result; info != NULL; info = info->ai_next) {
+	for (info = result; info; info = info->ai_next) {
         errno = 0;
         sock = socket(info->ai_family, info->ai_socktype, info->ai_protocol);
 		if (sock == -1) continue;
-		if (connect(sock, info->ai_addr, info->ai_addrlen) != -1) break;
+		if (connect(sock, info->ai_addr, info->ai_addrlen) == 0) break;
 		socket_close(sock);
 	}
 	freeaddrinfo(result);
@@ -116,11 +116,11 @@ int socket_bind(const char *port)
 
     int sock;
     struct addrinfo *info;
-    for (info = result; info != NULL; info = info->ai_next) {
+    for (info = result; info; info = info->ai_next) {
         errno = 0;
         sock = socket(info->ai_family, info->ai_socktype, info->ai_protocol);
         if (sock == -1) continue;
-        if (bind(sock, info->ai_addr, info->ai_addrlen) != -1) break;
+        if (bind(sock, info->ai_addr, info->ai_addrlen) == 0) break;
         socket_close(sock);
     }
     freeaddrinfo(result);

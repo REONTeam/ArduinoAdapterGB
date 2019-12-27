@@ -29,7 +29,7 @@ struct mobile_user {
     _Atomic uint32_t bgb_clock;
     _Atomic uint32_t bgb_clock_latch;
     FILE *config;
-    int socket;
+    int sockets[MOBILE_MAX_CONNECTIONS];
 };
 
 void mobile_board_serial_disable(void *user)
@@ -72,7 +72,7 @@ bool mobile_board_time_check_ms(void *user, unsigned ms)
     return ret;
 }
 
-bool mobile_board_tcp_connect(void *user, const unsigned char *host, const unsigned port)
+bool mobile_board_tcp_connect(void *user, unsigned conn, const unsigned char *host, const unsigned port)
 {
     struct mobile_user *mobile = (struct mobile_user *)user;
 
@@ -83,16 +83,16 @@ bool mobile_board_tcp_connect(void *user, const unsigned char *host, const unsig
 
     int sock = socket_connect(s_host, s_port);
     if (sock == -1) {
-		fprintf(stderr, "Could not connect (%s:%s):", s_host, s_port);
+        fprintf(stderr, "Could not connect (%s:%s):", s_host, s_port);
         socket_perror(NULL);
         return false;
     }
 
-    mobile->socket = sock;
+    mobile->sockets[conn] = sock;
     return true;
 }
 
-bool mobile_board_tcp_listen(void *user, const unsigned port)
+bool mobile_board_tcp_listen(void *user, unsigned conn, const unsigned port)
 {
     struct mobile_user *mobile = (struct mobile_user *)user;
 
@@ -112,51 +112,51 @@ bool mobile_board_tcp_listen(void *user, const unsigned port)
         return false;
     }
 
-    mobile->socket = sock;
+    mobile->sockets[conn] = sock;
     return true;
 }
 
-bool mobile_board_tcp_accept(void *user)
+bool mobile_board_tcp_accept(void *user, unsigned conn)
 {
     struct mobile_user *mobile = (struct mobile_user *)user;
-    if (socket_hasdata(mobile->socket, 1000000) <= 0) return false;
-	int sock = accept(mobile->socket, NULL, NULL);
-	if (sock == -1) {
-		socket_perror("accept");
-		return false;
-	}
-	close(mobile->socket);
-	mobile->socket = sock;
+    if (socket_hasdata(mobile->sockets[conn], 1000000) <= 0) return false;
+    int sock = accept(mobile->sockets[conn], NULL, NULL);
+    if (sock == -1) {
+        socket_perror("accept");
+        return false;
+    }
+    close(mobile->sockets[conn]);
+    mobile->sockets[conn] = sock;
     return true;
 }
 
-void mobile_board_tcp_disconnect(void *user)
+void mobile_board_tcp_disconnect(void *user, unsigned conn)
 {
     struct mobile_user *mobile = (struct mobile_user *)user;
-    socket_close(mobile->socket);
-    mobile->socket = -1;
+    socket_close(mobile->sockets[conn]);
+    mobile->sockets[conn] = -1;
 }
 
-bool mobile_board_tcp_send(void *user, const void *data, const unsigned size)
+bool mobile_board_tcp_send(void *user, unsigned conn, const void *data, const unsigned size)
 {
     struct mobile_user *mobile = (struct mobile_user *)user;
-	if (send(mobile->socket, data, size, 0) == -1) {
-		socket_perror("send");
-		return false;
-	}
+    if (send(mobile->sockets[conn], data, size, 0) == -1) {
+        socket_perror("send");
+        return false;
+    }
     return true;
 }
 
-int mobile_board_tcp_receive(void *user, void *data)
+int mobile_board_tcp_receive(void *user, unsigned conn, void *data)
 {
     struct mobile_user *mobile = (struct mobile_user *)user;
-    if (!socket_hasdata(mobile->socket, 0)) return 0;
+    if (!socket_hasdata(mobile->sockets[conn], 0)) return 0;
     ssize_t len;
     if (data) {
-        len = recv(mobile->socket, data, MOBILE_MAX_TCP_SIZE, 0);
+        len = recv(mobile->sockets[conn], data, MOBILE_MAX_TCP_SIZE, 0);
     } else {
         char c;
-        len = recv(mobile->socket, &c, 1, MSG_PEEK);
+        len = recv(mobile->sockets[conn], &c, 1, MSG_PEEK);
     }
     if (!len) return -1;
     if (len == -1) socket_perror("recv");
@@ -280,14 +280,14 @@ int main(A_UNUSED int argc, char *argv[])
     }
 #endif
 
-    int sock = socket_connect(host, port);
-    if (sock == -1) {
-		fprintf(stderr, "Could not connect (%s:%s):", host, port);
+    int bgb_sock = socket_connect(host, port);
+    if (bgb_sock == -1) {
+        fprintf(stderr, "Could not connect (%s:%s):", host, port);
         socket_perror(NULL);
         return EXIT_FAILURE;
     }
 
-    if (setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, (char *)&(int){1}, sizeof(int)) == -1) {
+    if (setsockopt(bgb_sock, IPPROTO_TCP, TCP_NODELAY, (char *)&(int){1}, sizeof(int)) == -1) {
         socket_perror("setsockopt");
         return EXIT_FAILURE;
     }
@@ -303,7 +303,7 @@ int main(A_UNUSED int argc, char *argv[])
     mobile->action = MOBILE_ACTION_NONE;
     mobile->bgb_clock = mobile->bgb_clock_latch = 0;
     mobile->config = config;
-    mobile->socket = -1;
+    for (unsigned i = 0; i < MOBILE_MAX_CONNECTIONS; i++) mobile->sockets[i] = -1;
     mobile_init(&mobile->adapter, mobile);
 
     pthread_t mobile_thread;
@@ -312,11 +312,13 @@ int main(A_UNUSED int argc, char *argv[])
         fprintf(stderr, "pthread_create: %s\n", strerror(pthread_errno));
         return EXIT_FAILURE;
     }
-    bgb_loop(sock, bgb_loop_transfer, bgb_loop_timestamp, mobile);
+    bgb_loop(bgb_sock, bgb_loop_transfer, bgb_loop_timestamp, mobile);
     pthread_cancel(mobile_thread);
 
-    if (mobile->socket != -1) socket_close(mobile->socket);
-    socket_close(sock);
+    for (unsigned i = 0; i < MOBILE_MAX_CONNECTIONS; i++) {
+        if (mobile->sockets[i] != -1) socket_close(mobile->sockets[i]);
+    }
+    socket_close(bgb_sock);
 
 #ifdef __WIN32__
     WSACleanup();
