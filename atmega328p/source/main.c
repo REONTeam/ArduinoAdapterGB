@@ -104,7 +104,7 @@ bool mobile_board_time_check_ms(A_UNUSED void *user, unsigned ms)
 int main(void)
 {
     serial_init(2000000);
-    mobile_init(&adapter, NULL);
+    mobile_init(&adapter, NULL, NULL);
 
     // Set up timer 0
     TCNT0 = 0;

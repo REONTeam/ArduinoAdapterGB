@@ -91,7 +91,7 @@ bool mobile_board_time_check_ms(A_UNUSED void *user, unsigned ms)
 void setup()
 {
     Serial.begin(2000000);
-    mobile_init(&adapter, NULL);
+    mobile_init(&adapter, NULL, NULL);
 
 #ifdef DEBUG_CMD
     // Redirect any printf to the Arduino serial.

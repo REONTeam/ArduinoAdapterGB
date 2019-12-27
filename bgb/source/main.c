@@ -4,7 +4,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
-#include <errno.h>
 #include <locale.h>
 #include <pthread.h>
 #include "libmobile/mobile.h"
@@ -80,6 +79,8 @@ bool mobile_board_tcp_connect(void *user, unsigned conn, const unsigned char *ho
     char s_port[6];
     sprintf(s_host, "%u.%u.%u.%u", host[0], host[1], host[2], host[3]);
     sprintf(s_port, "%u", port & 0xFFFF);
+
+    // TODO: Stop connecting when the game disconnects!
 
     int sock = socket_connect(s_host, s_port);
     if (sock == -1) {
@@ -234,6 +235,8 @@ int main(A_UNUSED int argc, char *argv[])
 
     char *fname_config = "config.bin";
 
+    struct mobile_adapter_config adapter_config = MOBILE_ADAPTER_CONFIG_DEFAULT;
+
     while (*++argv) {
         if ((*argv)[0] != '-' || strcmp(*argv, "--") == 0) {
             break;
@@ -246,6 +249,22 @@ int main(A_UNUSED int argc, char *argv[])
             }
             fname_config = argv[1];
             argv += 1;
+        } else if (strcmp(*argv, "--p2p_port") == 0) {
+            if (!argv[1]) {
+                fprintf(stderr, "Missing parameter: %s\n", argv[0]);
+                show_help();
+            }
+            adapter_config.p2p_port = strtol(argv[1], NULL, 0);
+            argv += 1;
+        } else if (strcmp(*argv, "--device") == 0) {
+            if (!argv[1]) {
+                fprintf(stderr, "Missing parameter: %s\n", argv[0]);
+                show_help();
+            }
+            adapter_config.device = strtol(argv[1], NULL, 0);
+            argv += 1;
+        } else if (strcmp(*argv, "--unmetered") == 0) {
+            adapter_config.unmetered = true;
         } else {
             fprintf(stderr, "Unknown option: %s\n", *argv);
             show_help();
@@ -287,7 +306,7 @@ int main(A_UNUSED int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    if (setsockopt(bgb_sock, IPPROTO_TCP, TCP_NODELAY, (char *)&(int){1}, sizeof(int)) == -1) {
+    if (setsockopt(bgb_sock, IPPROTO_TCP, TCP_NODELAY, (void *)&(int){1}, sizeof(int)) == -1) {
         socket_perror("setsockopt");
         return EXIT_FAILURE;
     }
@@ -304,7 +323,7 @@ int main(A_UNUSED int argc, char *argv[])
     mobile->bgb_clock = mobile->bgb_clock_latch = 0;
     mobile->config = config;
     for (unsigned i = 0; i < MOBILE_MAX_CONNECTIONS; i++) mobile->sockets[i] = -1;
-    mobile_init(&mobile->adapter, mobile);
+    mobile_init(&mobile->adapter, mobile, &adapter_config);
 
     pthread_t mobile_thread;
     int pthread_errno = pthread_create(&mobile_thread, NULL, thread_mobile_loop, mobile);
