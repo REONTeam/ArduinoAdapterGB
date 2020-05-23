@@ -10,6 +10,7 @@ SERIAL := /dev/ttyACM0
 CC := avr-gcc
 OBJCOPY := avr-objcopy
 OBJDUMP := avr-objdump
+SIZE := avr-size
 AVRDUDE := avrdude
 
 OPTIM := -Os -g -fdata-sections -ffunction-sections -flto -fuse-linker-plugin -fipa-pta -fshort-enums #-fgraphite-identity -floop-nest-optimize
@@ -44,6 +45,7 @@ screen: upload
 
 $(dir_build)/$(name).elf: $(objects) | $$(dir $$@)
 	$(LINK.o) $^ $(LOADLIBES) $(LDLIBS) -o $@
+	$(SIZE) $@
 
 $(dir_build)/%.o: $(dir_source)/%.c | $$(dir $$@)
 	$(COMPILE.c) -MMD -MF $(@:.o=.d) $(OUTPUT_OPTION) $<
