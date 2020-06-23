@@ -5,7 +5,7 @@
 #include "commands.h"
 struct mobile_adapter;
 
-#ifdef __cplusplus
+#if defined(__cplusplus) || defined(_MSC_VER)
 #define _Atomic
 #endif
 
