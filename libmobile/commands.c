@@ -497,10 +497,10 @@ struct mobile_packet *mobile_packet_process(struct mobile_adapter *adapter, stru
             return error_packet(packet, 1);  // UNKERR
         }
 
-        {
-            // STUB
-            return error_packet(packet, 1);  // UNKERR
-        }
+        packet->data[0] = 0x7F;
+        packet->data[1] = 0;
+        packet->data[2] = 0;
+        packet->data[3] = 1;
         packet->length = 4;
         return packet;
 
