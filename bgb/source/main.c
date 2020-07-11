@@ -148,7 +148,7 @@ bool mobile_board_tcp_send(void *user, unsigned conn, const void *data, const un
     return true;
 }
 
-int mobile_board_tcp_receive(void *user, unsigned conn, void *data)
+int mobile_board_tcp_recv(void *user, unsigned conn, void *data)
 {
     struct mobile_user *mobile = (struct mobile_user *)user;
     if (!socket_hasdata(mobile->sockets[conn], 0)) return 0;
@@ -159,9 +159,83 @@ int mobile_board_tcp_receive(void *user, unsigned conn, void *data)
         char c;
         len = recv(mobile->sockets[conn], &c, 1, MSG_PEEK);
     }
-    if (!len) return -1;
+    if (len == 0) return -1;  // End of file
     if (len == -1) socket_perror("recv");
     return len;
+}
+
+bool mobile_board_udp_open(void *user, unsigned conn, const unsigned port)
+{
+    struct mobile_user *mobile = (struct mobile_user *)user;
+    int sock = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sock == -1) {
+        socket_perror("socket");
+        return false;
+    }
+
+    // Bind to requested port, random port if 0.
+    struct sockaddr_in addr = {
+        .sin_family = AF_INET,
+        .sin_port = htons(port)
+    };
+    if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
+        socket_perror("bind");
+        close(sock);
+        return false;
+    }
+    mobile->sockets[conn] = sock;
+    return true;
+}
+
+bool mobile_board_udp_sendto(void *user, unsigned conn, const void *data, const unsigned size, const unsigned char *host, const unsigned port)
+{
+    struct mobile_user *mobile = (struct mobile_user *)user;
+    struct sockaddr_in addr = {
+        .sin_family = AF_INET,
+        .sin_port = htons(port)
+    };
+    memcpy(&addr.sin_addr.s_addr, host, 4);
+    if (sendto(mobile->sockets[conn], data, size, 0, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
+        socket_perror("send");
+        return false;
+    }
+    return true;
+}
+
+int mobile_board_udp_recvfrom(void *user, unsigned conn, void *data, unsigned char *host, unsigned *port)
+{
+    struct mobile_user *mobile = (struct mobile_user *)user;
+    if (!socket_hasdata(mobile->sockets[conn], 0)) return 0;
+
+    struct sockaddr_in addr;
+    socklen_t addr_len = sizeof(addr);
+
+    ssize_t len;
+    if (data) {
+        len = recvfrom(mobile->sockets[conn], data, MOBILE_MAX_TCP_SIZE, 0, (struct sockaddr *)&addr, &addr_len);
+    } else {
+        char c;
+        len = recvfrom(mobile->sockets[conn], &c, 1, MSG_PEEK, (struct sockaddr *)&addr, &addr_len);
+    }
+    if (host && port) {
+        if (addr_len != sizeof(addr)) {
+            memset(host, 0, 4);
+            *port = 0;
+        } else {
+            memcpy(host, &addr.sin_addr.s_addr, 4);
+            *port = ntohs(addr.sin_port);
+        }
+    }
+    if (len == 0) return -1;
+    if (len == -1) socket_perror("recv");
+    return len;
+}
+
+void mobile_board_udp_close(void *user, unsigned conn)
+{
+    struct mobile_user *mobile = (struct mobile_user *)user;
+    socket_close(mobile->sockets[conn]);
+    mobile->sockets[conn] = -1;
 }
 
 void *thread_mobile_loop(void *user)
