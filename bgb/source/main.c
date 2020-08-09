@@ -25,9 +25,9 @@ struct mobile_user {
     pthread_cond_t cond;
     struct mobile_adapter adapter;
     enum mobile_action action;
-    _Atomic uint32_t bgb_clock;
-    _Atomic uint32_t bgb_clock_latch;
     FILE *config;
+    _Atomic uint32_t bgb_clock;
+    _Atomic uint32_t bgb_clock_latch[MOBILE_MAX_TIMERS];
     int sockets[MOBILE_MAX_CONNECTIONS];
 };
 
@@ -57,16 +57,17 @@ bool mobile_board_config_write(void *user, const void *src, const uintptr_t offs
     return fwrite(src, 1, size, mobile->config) == size;
 }
 
-void mobile_board_time_latch(void *user)
+void mobile_board_time_latch(void *user, enum mobile_timers timer)
 {
     struct mobile_user *mobile = (struct mobile_user *)user;
-    mobile->bgb_clock_latch = mobile->bgb_clock;
+    mobile->bgb_clock_latch[timer] = mobile->bgb_clock;
 }
 
-bool mobile_board_time_check_ms(void *user, unsigned ms)
+bool mobile_board_time_check_ms(void *user, enum mobile_timers timer, unsigned ms)
 {
     struct mobile_user *mobile = (struct mobile_user *)user;
-    bool ret = ((mobile->bgb_clock - mobile->bgb_clock_latch) & 0x7FFFFFFF) >
+    bool ret = (
+        (mobile->bgb_clock - mobile->bgb_clock_latch[timer]) & 0x7FFFFFFF) >
         (uint32_t)((double)ms * (1 << 21) / 1000);
     return ret;
 }
@@ -295,7 +296,7 @@ char *program_name;
 
 void show_help(void)
 {
-    fprintf(stderr, "%s [-h] [-c config] [address [port]]\n", program_name);
+    fprintf(stderr, "%s [-h] [-c config] [host [port]]\n", program_name);
     exit(EXIT_FAILURE);
 }
 
@@ -345,12 +346,8 @@ int main(A_UNUSED int argc, char *argv[])
         }
     }
 
-    if (*argv) {
-        host = *argv++;
-    }
-    if (*argv) {
-        port = *argv++;
-    }
+    if (*argv) host = *argv++;
+    if (*argv) port = *argv++;
 
     FILE *config = fopen(fname_config, "r+b");
     if (!config) config = fopen(fname_config, "w+b");
@@ -394,9 +391,10 @@ int main(A_UNUSED int argc, char *argv[])
     mobile->mutex_cond = (pthread_mutex_t)PTHREAD_MUTEX_INITIALIZER;
     mobile->cond = (pthread_cond_t)PTHREAD_COND_INITIALIZER;
     mobile->action = MOBILE_ACTION_NONE;
-    mobile->bgb_clock = mobile->bgb_clock_latch = 0;
     mobile->config = config;
-    for (unsigned i = 0; i < MOBILE_MAX_CONNECTIONS; i++) mobile->sockets[i] = -1;
+    mobile->bgb_clock = 0;
+    for (int i = 0; i < MOBILE_MAX_TIMERS; i++) mobile->bgb_clock_latch[i] = 0;
+    for (int i = 0; i < MOBILE_MAX_CONNECTIONS; i++) mobile->sockets[i] = -1;
     mobile_init(&mobile->adapter, mobile, &adapter_config);
 
     pthread_t mobile_thread;
