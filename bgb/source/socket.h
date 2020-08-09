@@ -28,4 +28,3 @@
 void socket_perror(const char *func);
 int socket_hasdata(int socket, int delay);
 int socket_connect(const char *host, const char *port);
-int socket_bind(const char *port);

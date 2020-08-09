@@ -76,17 +76,25 @@ bool mobile_board_tcp_connect(void *user, unsigned conn, const unsigned char *ho
 {
     struct mobile_user *mobile = (struct mobile_user *)user;
 
-    char s_host[4 * 4 + 1];
-    char s_port[6];
-    sprintf(s_host, "%u.%u.%u.%u", host[0], host[1], host[2], host[3]);
-    sprintf(s_port, "%u", port & 0xFFFF);
-
-    // TODO: Stop connecting when the game disconnects!
-
-    int sock = socket_connect(s_host, s_port);
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock == -1) {
+        socket_perror("socket");
+        return false;
+    }
+
+    struct sockaddr_in addr = {
+        .sin_family = AF_INET,
+        .sin_port = htons(port)
+    };
+    memcpy(&addr.sin_addr.s_addr, host, 4);
+    if (connect(sock, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
+        char s_host[4 * 4 + 1];
+        char s_port[6];
+        sprintf(s_host, "%u.%u.%u.%u", host[0], host[1], host[2], host[3]);
+        sprintf(s_port, "%u", port & 0xFFFF);
         fprintf(stderr, "Could not connect (%s:%s):", s_host, s_port);
         socket_perror(NULL);
+        close(sock);
         return false;
     }
 
@@ -101,10 +109,19 @@ bool mobile_board_tcp_listen(void *user, unsigned conn, const unsigned port)
     char s_port[6];
     sprintf(s_port, "%u", port & 0xFFFF);
 
-    int sock = socket_bind(s_port);
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock == -1) {
-        fprintf(stderr, "Could not bind (%s):", s_port);
-        socket_perror(NULL);
+        socket_perror("socket");
+        return false;
+    }
+
+    struct sockaddr_in addr = {
+        .sin_family = AF_INET,
+        .sin_port = htons(port)
+    };
+    if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
+        socket_perror("bind");
+        close(sock);
         return false;
     }
 
