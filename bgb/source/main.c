@@ -94,7 +94,7 @@ bool mobile_board_tcp_connect(void *user, unsigned conn, const unsigned char *ho
         sprintf(s_port, "%u", port & 0xFFFF);
         fprintf(stderr, "Could not connect (%s:%s):", s_host, s_port);
         socket_perror(NULL);
-        close(sock);
+        socket_close(sock);
         return false;
     }
 
@@ -105,9 +105,6 @@ bool mobile_board_tcp_connect(void *user, unsigned conn, const unsigned char *ho
 bool mobile_board_tcp_listen(void *user, unsigned conn, const unsigned port)
 {
     struct mobile_user *mobile = (struct mobile_user *)user;
-
-    char s_port[6];
-    sprintf(s_port, "%u", port & 0xFFFF);
 
     int sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock == -1) {
@@ -121,13 +118,19 @@ bool mobile_board_tcp_listen(void *user, unsigned conn, const unsigned port)
     };
     if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
         socket_perror("bind");
-        close(sock);
+        socket_close(sock);
         return false;
+    }
+
+    if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR,
+            (char *)&(int){1}, sizeof(int)) == -1) {
+        socket_close(sock);
+        return -1;
     }
 
     if (listen(sock, 1) == -1) {
         socket_perror("listen");
-        close(sock);
+        socket_close(sock);
         return false;
     }
 
@@ -144,7 +147,7 @@ bool mobile_board_tcp_accept(void *user, unsigned conn)
         socket_perror("accept");
         return false;
     }
-    close(mobile->sockets[conn]);
+    socket_close(mobile->sockets[conn]);
     mobile->sockets[conn] = sock;
     return true;
 }
@@ -176,8 +179,9 @@ int mobile_board_tcp_recv(void *user, unsigned conn, void *data, unsigned length
     } else {
         char c;
         len = recv(mobile->sockets[conn], &c, 1, MSG_PEEK);
+        if (len == 1) return 0;
     }
-    if (len == 0) return -1;  // End of file
+    if (len == 0) return -2;  // End of file (disconnect received)
     if (len == -1) socket_perror("recv");
     return len;
 }
@@ -198,7 +202,7 @@ bool mobile_board_udp_open(void *user, unsigned conn, const unsigned port)
     };
     if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
         socket_perror("bind");
-        close(sock);
+        socket_close(sock);
         return false;
     }
     mobile->sockets[conn] = sock;
