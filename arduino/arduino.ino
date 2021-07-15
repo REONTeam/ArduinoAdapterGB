@@ -5,7 +5,14 @@
 //#define DEBUG_SPI
 
 // Define this to print every command sent and received
-#define DEBUG_CMD
+//#define DEBUG_CMD
+
+// Define this to enable comunication with a PC application
+#define BRIDGE_PC
+
+#ifdef BRIDGE_PC
+#include "src/impl/pcconnector.h"
+#endif
 
 #ifdef DEBUG_SPI
 #define BUF_LEN 0x100
