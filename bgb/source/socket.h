@@ -5,6 +5,7 @@
 #if defined(__unix__)
 
 // IWYU pragma: begin_exports
+#include <arpa/inet.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>

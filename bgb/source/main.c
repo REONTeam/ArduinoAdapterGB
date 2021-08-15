@@ -31,6 +31,41 @@ struct mobile_user {
     int sockets[MOBILE_MAX_CONNECTIONS];
 };
 
+union u_sockaddr {
+    struct sockaddr addr;
+    struct sockaddr_in addr4;
+    struct sockaddr_in6 addr6;
+};
+
+static struct sockaddr *convert_sockaddr(socklen_t *addrlen, union u_sockaddr *u_addr, const struct mobile_addr *addr)
+{
+    *addrlen = 0;
+    struct sockaddr *res = NULL;
+    if (!addr) return res;
+    if (addr->type == MOBILE_ADDRTYPE_IPV4) {
+        struct mobile_addr4 *addr4 = (struct mobile_addr4 *)addr;
+        memset(&u_addr->addr4, 0, sizeof(u_addr->addr4));
+        u_addr->addr4.sin_family = AF_INET;
+        u_addr->addr4.sin_port = htons(addr4->port);
+        if (sizeof(struct in_addr) != sizeof(addr4->host)) return res;
+        memcpy(&u_addr->addr4.sin_addr.s_addr, addr4->host,
+            sizeof(struct in_addr));
+        *addrlen = sizeof(struct sockaddr_in);
+        res = &u_addr->addr;
+    } else if (addr->type == MOBILE_ADDRTYPE_IPV6) {
+        struct mobile_addr6 *addr6 = (struct mobile_addr6 *)addr;
+        memset(&u_addr->addr6, 0, sizeof(u_addr->addr6));
+        u_addr->addr6.sin6_family = AF_INET6;
+        u_addr->addr6.sin6_port = htons(addr6->port);
+        if (sizeof(struct in6_addr) != sizeof(addr6->host)) return res;
+        memcpy(&u_addr->addr6.sin6_addr.s6_addr, addr6->host,
+            sizeof(struct in6_addr));
+        *addrlen = sizeof(struct sockaddr_in6);
+        res = &u_addr->addr;
+    }
+    return res;
+}
+
 void mobile_board_serial_disable(void *user)
 {
     struct mobile_user *mobile = (struct mobile_user *)user;
@@ -72,64 +107,53 @@ bool mobile_board_time_check_ms(void *user, enum mobile_timers timer, unsigned m
     return ret;
 }
 
-bool mobile_board_tcp_connect(void *user, unsigned conn, const unsigned char *host, const unsigned port)
+bool mobile_board_sock_open(void *user, unsigned conn, enum mobile_socktype socktype, enum mobile_addrtype addrtype, unsigned bindport)
 {
     struct mobile_user *mobile = (struct mobile_user *)user;
 
-    int sock = socket(AF_INET, SOCK_STREAM, 0);
+    int s_socktype;
+    switch (socktype) {
+        case MOBILE_SOCKTYPE_TCP: s_socktype = SOCK_STREAM; break;
+        case MOBILE_SOCKTYPE_UDP: s_socktype = SOCK_DGRAM; break;
+        default: return false;
+    }
+
+    int s_addrtype;
+    switch (addrtype) {
+        case MOBILE_ADDRTYPE_IPV4: s_addrtype = AF_INET; break;
+        case MOBILE_ADDRTYPE_IPV6: s_addrtype = AF_INET6; break;
+        default: return false;
+    }
+
+    int sock = socket(s_addrtype, s_socktype, 0);
     if (sock == -1) {
         socket_perror("socket");
-        return false;
-    }
-
-    struct sockaddr_in addr = {
-        .sin_family = AF_INET,
-        .sin_port = htons(port)
-    };
-    memcpy(&addr.sin_addr.s_addr, host, 4);
-    if (connect(sock, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
-        char s_host[4 * 4 + 1];
-        char s_port[6];
-        sprintf(s_host, "%u.%u.%u.%u", host[0], host[1], host[2], host[3]);
-        sprintf(s_port, "%u", port & 0xFFFF);
-        fprintf(stderr, "Could not connect (%s:%s):", s_host, s_port);
-        socket_perror(NULL);
-        socket_close(sock);
-        return false;
-    }
-
-    mobile->sockets[conn] = sock;
-    return true;
-}
-
-bool mobile_board_tcp_listen(void *user, unsigned conn, const unsigned port)
-{
-    struct mobile_user *mobile = (struct mobile_user *)user;
-
-    int sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (sock == -1) {
-        socket_perror("socket");
-        return false;
-    }
-
-    struct sockaddr_in addr = {
-        .sin_family = AF_INET,
-        .sin_port = htons(port)
-    };
-    if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
-        socket_perror("bind");
-        socket_close(sock);
         return false;
     }
 
     if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR,
             (char *)&(int){1}, sizeof(int)) == -1) {
+        socket_perror("setsockopt");
         socket_close(sock);
-        return -1;
+        return false;
     }
 
-    if (listen(sock, 1) == -1) {
-        socket_perror("listen");
+    int rc = -1;
+    if (addrtype == MOBILE_ADDRTYPE_IPV4) {
+        struct sockaddr_in addr = {
+            .sin_family = AF_INET,
+            .sin_port = htons(bindport),
+        };
+        rc = bind(sock, (struct sockaddr *)&addr, sizeof(addr));
+    } else {
+        struct sockaddr_in6 addr = {
+            .sin6_family = AF_INET6,
+            .sin6_port = htons(bindport),
+        };
+        rc = bind(sock, (struct sockaddr *)&addr, sizeof(addr));
+    }
+    if (rc == -1) {
+        socket_perror("bind");
         socket_close(sock);
         return false;
     }
@@ -138,7 +162,60 @@ bool mobile_board_tcp_listen(void *user, unsigned conn, const unsigned port)
     return true;
 }
 
-bool mobile_board_tcp_accept(void *user, unsigned conn)
+void mobile_board_sock_close(void *user, unsigned conn)
+{
+    struct mobile_user *mobile = (struct mobile_user *)user;
+    socket_close(mobile->sockets[conn]);
+    mobile->sockets[conn] = -1;
+}
+
+bool mobile_board_sock_connect(void *user, unsigned conn, const struct mobile_addr *addr)
+{
+    struct mobile_user *mobile = (struct mobile_user *)user;
+
+    int sock = mobile->sockets[conn];
+
+    union u_sockaddr u_addr;
+    socklen_t s_addrlen;
+    struct sockaddr *s_addr = convert_sockaddr(&s_addrlen, &u_addr, addr);
+
+    if (connect(sock, s_addr, s_addrlen) == -1) {
+        char s_host[INET6_ADDRSTRLEN] = {0};
+        char s_port[6];
+        if (s_addr->sa_family == AF_INET) {
+            inet_ntop(s_addr->sa_family, &u_addr.addr4.sin_addr, s_host,
+                sizeof(s_host));
+            sprintf(s_port, "%u", ntohs(u_addr.addr4.sin_port) & 0xFFFF);
+        } else if (s_addr->sa_family == AF_INET6) {
+            inet_ntop(s_addr->sa_family, &u_addr.addr6.sin6_addr, s_host,
+                sizeof(s_host));
+            sprintf(s_port, "%u", ntohs(u_addr.addr6.sin6_port) & 0xFFFF);
+        }
+        fprintf(stderr, "Could not connect (ip %s port %s):", s_host, s_port);
+        socket_perror(NULL);
+        socket_close(sock);
+        mobile->sockets[conn] = -1;
+        return false;
+    }
+    return true;
+}
+
+bool mobile_board_sock_listen(void *user, unsigned conn)
+{
+    struct mobile_user *mobile = (struct mobile_user *)user;
+
+    int sock = mobile->sockets[conn];
+    if (listen(sock, 1) == -1) {
+        socket_perror("listen");
+        socket_close(sock);
+        mobile->sockets[conn] = -1;
+        return false;
+    }
+
+    return true;
+}
+
+bool mobile_board_sock_accept(void *user, unsigned conn)
 {
     struct mobile_user *mobile = (struct mobile_user *)user;
     if (socket_hasdata(mobile->sockets[conn], 1000000) <= 0) return false;
@@ -152,112 +229,52 @@ bool mobile_board_tcp_accept(void *user, unsigned conn)
     return true;
 }
 
-void mobile_board_tcp_disconnect(void *user, unsigned conn)
+bool mobile_board_sock_send(void *user, unsigned conn, const void *data, const unsigned size, const struct mobile_addr *addr)
 {
     struct mobile_user *mobile = (struct mobile_user *)user;
-    socket_close(mobile->sockets[conn]);
-    mobile->sockets[conn] = -1;
-}
 
-bool mobile_board_tcp_send(void *user, unsigned conn, const void *data, const unsigned size)
-{
-    struct mobile_user *mobile = (struct mobile_user *)user;
-    if (send(mobile->sockets[conn], data, size, 0) == -1) {
+    union u_sockaddr u_addr;
+    socklen_t s_addrlen;
+    struct sockaddr *s_addr = convert_sockaddr(&s_addrlen, &u_addr, addr);
+    if (sendto(mobile->sockets[conn], data, size, 0, s_addr, s_addrlen) == -1) {
         socket_perror("send");
         return false;
     }
     return true;
 }
 
-int mobile_board_tcp_recv(void *user, unsigned conn, void *data, unsigned length)
-{
-    struct mobile_user *mobile = (struct mobile_user *)user;
-    if (!socket_hasdata(mobile->sockets[conn], 0)) return 0;
-    ssize_t len;
-    if (data) {
-        len = recv(mobile->sockets[conn], data, length, 0);
-    } else {
-        char c;
-        len = recv(mobile->sockets[conn], &c, 1, MSG_PEEK);
-        if (len == 1) return 0;
-    }
-    if (len == 0) return -2;  // End of file (disconnect received)
-    if (len == -1) socket_perror("recv");
-    return len;
-}
-
-bool mobile_board_udp_open(void *user, unsigned conn, const unsigned port)
-{
-    struct mobile_user *mobile = (struct mobile_user *)user;
-    int sock = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sock == -1) {
-        socket_perror("socket");
-        return false;
-    }
-
-    // Bind to requested port, random port if 0.
-    struct sockaddr_in addr = {
-        .sin_family = AF_INET,
-        .sin_port = htons(port)
-    };
-    if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
-        socket_perror("bind");
-        socket_close(sock);
-        return false;
-    }
-    mobile->sockets[conn] = sock;
-    return true;
-}
-
-bool mobile_board_udp_sendto(void *user, unsigned conn, const void *data, const unsigned size, const unsigned char *host, const unsigned port)
-{
-    struct mobile_user *mobile = (struct mobile_user *)user;
-    struct sockaddr_in addr = {
-        .sin_family = AF_INET,
-        .sin_port = htons(port)
-    };
-    memcpy(&addr.sin_addr.s_addr, host, 4);
-    if (sendto(mobile->sockets[conn], data, size, 0, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
-        socket_perror("send");
-        return false;
-    }
-    return true;
-}
-
-int mobile_board_udp_recvfrom(void *user, unsigned conn, void *data, unsigned length, unsigned char *host, unsigned *port)
+int mobile_board_sock_recv(void *user, unsigned conn, void *data, unsigned size, struct mobile_addr *addr)
 {
     struct mobile_user *mobile = (struct mobile_user *)user;
     if (!socket_hasdata(mobile->sockets[conn], 0)) return 0;
 
-    struct sockaddr_in addr;
-    socklen_t addr_len = sizeof(addr);
+    union u_sockaddr u_addr;
+    socklen_t s_addrlen = sizeof(u_addr);
+    struct sockaddr *s_addr = (struct sockaddr *)&u_addr;
 
     ssize_t len;
     if (data) {
-        len = recvfrom(mobile->sockets[conn], data, length, 0, (struct sockaddr *)&addr, &addr_len);
+        len = recvfrom(mobile->sockets[conn], data, size, 0, s_addr, &s_addrlen);
     } else {
         char c;
-        len = recvfrom(mobile->sockets[conn], &c, 1, MSG_PEEK, (struct sockaddr *)&addr, &addr_len);
+        len = recvfrom(mobile->sockets[conn], &c, 1, MSG_PEEK, s_addr, &s_addrlen);
     }
-    if (host && port) {
-        if (addr_len != sizeof(addr)) {
-            memset(host, 0, 4);
-            *port = 0;
-        } else {
-            memcpy(host, &addr.sin_addr.s_addr, 4);
-            *port = ntohs(addr.sin_port);
+    if (addr) {
+        if (s_addr->sa_family == AF_INET) {
+            struct mobile_addr4 *addr4 = (struct mobile_addr4 *)addr;
+            addr4->type = MOBILE_ADDRTYPE_IPV4;
+            addr4->port = ntohs(u_addr.addr4.sin_port);
+            memcpy(addr4->host, &u_addr.addr4.sin_addr.s_addr, sizeof(addr4->host));
+        } else if (s_addr->sa_family == AF_INET6) {
+            struct mobile_addr6 *addr6 = (struct mobile_addr6 *)addr;
+            addr6->type = MOBILE_ADDRTYPE_IPV6;
+            addr6->port = ntohs(u_addr.addr6.sin6_port);
+            memcpy(addr6->host, &u_addr.addr6.sin6_addr.s6_addr, sizeof(addr6->host));
         }
     }
     if (len == 0) return -1;
     if (len == -1) socket_perror("recv");
     return len;
-}
-
-void mobile_board_udp_close(void *user, unsigned conn)
-{
-    struct mobile_user *mobile = (struct mobile_user *)user;
-    socket_close(mobile->sockets[conn]);
-    mobile->sockets[conn] = -1;
 }
 
 void *thread_mobile_loop(void *user)
