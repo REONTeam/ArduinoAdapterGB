@@ -9,6 +9,7 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
+#include <poll.h>
 // IWYU pragma: end_exports
 
 #define socket_close close
@@ -19,6 +20,7 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #undef s_host  // Wtf windows?
+#undef s_addr
 
 #define socket_close closesocket
 
@@ -28,4 +30,5 @@
 
 void socket_perror(const char *func);
 int socket_hasdata(int socket, int delay);
+int socket_isconnected(int socket, int delay);
 int socket_connect(const char *host, const char *port);

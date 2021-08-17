@@ -47,18 +47,31 @@ void socket_perror(const char *func)
 
 int socket_hasdata(int socket, int delay)
 {
-    fd_set rfds;
-    FD_ZERO(&rfds);
-    FD_SET(socket, &rfds);
-    fd_set exfds;
-    FD_ZERO(&exfds);
-    FD_SET(socket, &exfds);
-    struct timeval tv = {.tv_sec = delay / 1000000, .tv_usec = delay % 1000000};
-    int sel = select(socket + 1, &rfds, NULL, &exfds, &tv);
-    if (sel == -1) {
-        perror("select");
-    }
-    return sel;
+    struct pollfd fd = {
+        .fd = socket,
+        .events = POLLIN | POLLPRI,
+    };
+    int rc = poll(&fd, 1, delay);
+    if (rc == -1) perror("poll");
+    return rc;
+}
+
+int socket_isconnected(int socket, int delay)
+{
+    struct pollfd fd = {
+        .fd = socket,
+        .events = POLLOUT,
+    };
+    int rc = poll(&fd, 1, delay);
+    if (rc == -1) perror("poll");
+    if (rc <= 0) return rc;
+
+    int err;
+    socklen_t err_len = sizeof(err);
+    getsockopt(socket, SOL_SOCKET, SO_ERROR, &err, &err_len);
+    errno = err;
+    if (err) return -1;
+    return rc;
 }
 
 int socket_connect(const char *host, const char *port)
@@ -74,7 +87,7 @@ int socket_connect(const char *host, const char *port)
 #if defined(__unix__)
 		fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(gai_errno));
 #elif defined(__WIN32__)
-        fprintf(stderr, "getaddrinfo: Error %d", gai_errno);
+        fprintf(stderr, "getaddrinfo: Error %d: ", gai_errno);
         socket_perror(NULL);
 #endif
 		return -1;

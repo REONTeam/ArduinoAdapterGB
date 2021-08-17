@@ -4,18 +4,13 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <errno.h>
 #include <locale.h>
 #include <pthread.h>
 #include "libmobile/mobile.h"
 
 #include "socket.h"
 #include "bgblink.h"
-
-#ifdef __GNUC__
-#define A_UNUSED __attribute__((unused))
-#else
-#define A_UNUSED
-#endif
 
 #include "libmobile/debug_cmd.h"  // IWYU pragma: keep
 
@@ -125,7 +120,7 @@ bool mobile_board_sock_open(void *user, unsigned conn, enum mobile_socktype sock
         default: return false;
     }
 
-    int sock = socket(s_addrtype, s_socktype, 0);
+    int sock = socket(s_addrtype, s_socktype | SOCK_NONBLOCK, 0);
     if (sock == -1) {
         socket_perror("socket");
         return false;
@@ -169,7 +164,7 @@ void mobile_board_sock_close(void *user, unsigned conn)
     mobile->sockets[conn] = -1;
 }
 
-bool mobile_board_sock_connect(void *user, unsigned conn, const struct mobile_addr *addr)
+int mobile_board_sock_connect(void *user, unsigned conn, const struct mobile_addr *addr)
 {
     struct mobile_user *mobile = (struct mobile_user *)user;
 
@@ -179,25 +174,33 @@ bool mobile_board_sock_connect(void *user, unsigned conn, const struct mobile_ad
     socklen_t s_addrlen;
     struct sockaddr *s_addr = convert_sockaddr(&s_addrlen, &u_addr, addr);
 
-    if (connect(sock, s_addr, s_addrlen) == -1) {
-        char s_host[INET6_ADDRSTRLEN] = {0};
-        char s_port[6];
-        if (s_addr->sa_family == AF_INET) {
-            inet_ntop(s_addr->sa_family, &u_addr.addr4.sin_addr, s_host,
-                sizeof(s_host));
-            sprintf(s_port, "%u", ntohs(u_addr.addr4.sin_port) & 0xFFFF);
-        } else if (s_addr->sa_family == AF_INET6) {
-            inet_ntop(s_addr->sa_family, &u_addr.addr6.sin6_addr, s_host,
-                sizeof(s_host));
-            sprintf(s_port, "%u", ntohs(u_addr.addr6.sin6_port) & 0xFFFF);
-        }
-        fprintf(stderr, "Could not connect (ip %s port %s):", s_host, s_port);
-        socket_perror(NULL);
-        socket_close(sock);
-        mobile->sockets[conn] = -1;
-        return false;
+    // Try to connect/check if we're connected
+    if (connect(sock, s_addr, s_addrlen) != -1) return 1;
+
+    // If the connection is in progress, block at most 100ms to see if it's
+    //   enough for it to connect.
+    if (errno == EINPROGRESS || errno == EALREADY) {
+        int rc = socket_isconnected(sock, 100);
+        if (rc > 0) return 1;
+        if (rc == 0) return 0;
     }
-    return true;
+
+    char s_host[INET6_ADDRSTRLEN] = {0};
+    char s_port[6];
+    if (s_addr->sa_family == AF_INET) {
+        inet_ntop(s_addr->sa_family, &u_addr.addr4.sin_addr, s_host,
+            sizeof(s_host));
+        sprintf(s_port, "%u", ntohs(u_addr.addr4.sin_port) & 0xFFFF);
+    } else if (s_addr->sa_family == AF_INET6) {
+        inet_ntop(s_addr->sa_family, &u_addr.addr6.sin6_addr, s_host,
+            sizeof(s_host));
+        sprintf(s_port, "%u", ntohs(u_addr.addr6.sin6_port) & 0xFFFF);
+    }
+    fprintf(stderr, "Could not connect (ip %s port %s) (errno=%d):", s_host, s_port, errno);
+    socket_perror(NULL);
+    socket_close(sock);
+    mobile->sockets[conn] = -1;
+    return -1;
 }
 
 bool mobile_board_sock_listen(void *user, unsigned conn)
@@ -218,7 +221,7 @@ bool mobile_board_sock_listen(void *user, unsigned conn)
 bool mobile_board_sock_accept(void *user, unsigned conn)
 {
     struct mobile_user *mobile = (struct mobile_user *)user;
-    if (socket_hasdata(mobile->sockets[conn], 1000000) <= 0) return false;
+    if (socket_hasdata(mobile->sockets[conn], 1000) == -1) return false;
     int sock = accept(mobile->sockets[conn], NULL, NULL);
     if (sock == -1) {
         socket_perror("accept");
@@ -246,7 +249,7 @@ bool mobile_board_sock_send(void *user, unsigned conn, const void *data, const u
 int mobile_board_sock_recv(void *user, unsigned conn, void *data, unsigned size, struct mobile_addr *addr)
 {
     struct mobile_user *mobile = (struct mobile_user *)user;
-    if (!socket_hasdata(mobile->sockets[conn], 0)) return 0;
+    if (socket_hasdata(mobile->sockets[conn], 0) <= 0) return 0;
 
     union u_sockaddr u_addr;
     socklen_t s_addrlen = sizeof(u_addr);
@@ -338,7 +341,7 @@ void show_help(void)
     exit(EXIT_FAILURE);
 }
 
-int main(A_UNUSED int argc, char *argv[])
+int main(int argc, char *argv[])
 {
     program_name = argv[0];
     setlocale(LC_ALL, "");
@@ -350,6 +353,7 @@ int main(A_UNUSED int argc, char *argv[])
 
     struct mobile_adapter_config adapter_config = MOBILE_ADAPTER_CONFIG_DEFAULT;
 
+    (void)argc;
     while (*++argv) {
         if ((*argv)[0] != '-' || strcmp(*argv, "--") == 0) {
             break;
