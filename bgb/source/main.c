@@ -280,33 +280,54 @@ int mobile_board_sock_recv(void *user, unsigned conn, void *data, unsigned size,
     return len;
 }
 
+static void filter_useless_actions(enum mobile_action *action)
+{
+    // Turns actions that aren't relevant to the emulator into
+    //   MOBILE_ACTION_NONE
+
+    switch (*action) {
+    // In an emulator, serial can't desync
+    case MOBILE_ACTION_RESET_SERIAL:
+        *action = MOBILE_ACTION_NONE;
+        break;
+
+    default:
+        break;
+    }
+}
+
 void *thread_mobile_loop(void *user)
 {
     struct mobile_user *mobile = (struct mobile_user *)user;
     pthread_mutex_lock(&mobile->mutex_cond);
     for (;;) {
-        // Process actions sent by bgb_loop_action
-        while (mobile->action == MOBILE_ACTION_NONE) {
-            pthread_cond_wait(&mobile->cond, &mobile->mutex_cond);
+        // Implicitly unlocks mutex_cond while waiting
+        pthread_cond_wait(&mobile->cond, &mobile->mutex_cond);
+
+        // Process actions until we run out
+        while (mobile->action != MOBILE_ACTION_NONE) {
+            mobile_action_process(&mobile->adapter, mobile->action);
+            fflush(stdout);
+
+            mobile->action = mobile_action_get(&mobile->adapter);
+            filter_useless_actions(&mobile->action);
         }
-        mobile_action_process(&mobile->adapter, mobile->action);
-        mobile->action = MOBILE_ACTION_NONE;
-        fflush(stdout);
     }
     pthread_mutex_unlock(&mobile->mutex_cond);
 }
 
 void bgb_loop_action(struct mobile_user *mobile)
 {
+    // Called for every byte transfer, unlock thread_mobile_loop if there's
+    //   anything to be done.
+
     // If the thread isn't doing anything, queue up the next action.
     if (pthread_mutex_trylock(&mobile->mutex_cond) != 0) return;
     if (mobile->action == MOBILE_ACTION_NONE) {
         enum mobile_action action = mobile_action_get(&mobile->adapter);
+        filter_useless_actions(&action);
 
-        // MOBILE_ACTION_RESET_SERIAL is not relevant to an emulator,
-        //   since the serial connection can't desync.
-        if (action != MOBILE_ACTION_NONE &&
-                action != MOBILE_ACTION_RESET_SERIAL) {
+        if (action != MOBILE_ACTION_NONE) {
             mobile->action = action;
             pthread_cond_signal(&mobile->cond);
         }
@@ -397,12 +418,13 @@ int main(int argc, char *argv[])
         perror("fopen");
         return EXIT_FAILURE;
     }
-    fseek(config, 0, SEEK_END);
 
     // Make sure config file is at least MOBILE_CONFIG_SIZE bytes big
+    fseek(config, 0, SEEK_END);
     for (int i = ftell(config); i < MOBILE_CONFIG_SIZE; i++) {
         fputc(0, config);
     }
+    rewind(config);
 
 #ifdef __WIN32__
     WSADATA wsaData;
@@ -447,6 +469,7 @@ int main(int argc, char *argv[])
     }
     bgb_loop(bgb_sock, bgb_loop_transfer, bgb_loop_timestamp, mobile);
     pthread_cancel(mobile_thread);
+    pthread_join(mobile_thread, NULL);
 
     for (unsigned i = 0; i < MOBILE_MAX_CONNECTIONS; i++) {
         if (mobile->sockets[i] != -1) socket_close(mobile->sockets[i]);

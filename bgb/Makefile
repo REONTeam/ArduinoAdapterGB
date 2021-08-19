@@ -8,7 +8,7 @@ CFLAGS := -Og -g -Wall -Wextra -std=gnu17 $(CFLAGS)
 CFLAGS += -pthread #$(shell pkg-config --cflags ...)
 LDLIBS += -pthread #$(shell pkg-config --libs ...)
 
-SANIT := -fsanitize=address -fsanitize=pointer-compare -fsanitize=pointer-subtract -fsanitize=leak -fsanitize=undefined
+SANIT := -fsanitize=address -fsanitize=leak -fsanitize=undefined
 OPTIM := -Os -fdata-sections -ffunction-sections -flto -fuse-linker-plugin -Wl,--gc-sections
 
 rwildcard = $(foreach d, $(wildcard $1*), $(filter $(subst *, %, $2), $d) $(call rwildcard, $d/, $2))

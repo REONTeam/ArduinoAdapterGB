@@ -23,6 +23,8 @@ class BGBMaster():
         self.sock = sock
         self.conn = None
 
+        self.timeoffset = 0
+
     def recv(self):
         try:
             pack = self.conn.recv(8)
@@ -87,8 +89,13 @@ class BGBMaster():
         print("BGBMaster.handle: Unhandled packet:", pack, file=sys.stderr)
         return (0,)
 
+    def add_time(self, offset):
+        # Offset in seconds
+        self.timeoffset += offset
+        self.update()
+
     def get_timestamp(self):
-        return int(time.time() * (1 << 21)) & 0x7FFFFFFF
+        return int((time.time() + self.timeoffset) * (1 << 21)) & 0x7FFFFFFF
 
     def update(self):
         pack = {
@@ -140,6 +147,7 @@ class Mobile():
 
     def __init__(self, bus):
         self.bus = bus
+        self.transfer_noret = False
 
     def transfer(self, cmd, data):
         self.bus.update()
@@ -157,6 +165,10 @@ class Mobile():
         err = self.bus.transfer(0)
         if err != cmd ^ 0x80:
             print("Mobile.transfer: Unexpected acknowledgement byte: %02X" % err, file=sys.stderr)
+            return None
+
+        if self.transfer_noret:
+            self.transfer_noret = False
             return None
 
         while True:
@@ -188,6 +200,10 @@ class Mobile():
         if res is not None:
             return True
         return None
+
+    def set_transfer_noret(self):
+        # Don't wait for return for the next transfer
+        self.transfer_noret = True
 
     def cmd_begin_session(self):
         data = list(b"NINTENDO")
@@ -292,12 +308,17 @@ class SimpleServer():
         self.conn.send(*args, **kwargs)
 
     def close(self):
-        self.conn.close()
-        self.conn = None
+        if self.sock:
+            self.sock.close()
+            self.sock = None
+        if self.conn:
+            self.conn.close()
+            self.conn = None
 
 if __name__ == "__main__":
     b = BGBMaster()
     s = subprocess.Popen(["./mobile"])
+    # s = subprocess.Popen(["valgrind", "--leak-check=full", "--show-leak-kinds=all", "./mobile"])
     b.accept()
 
     m = Mobile(b)
@@ -366,8 +387,23 @@ if __name__ == "__main__":
     m.cmd_hang_up_telephone()
     m.cmd_end_session()
 
+    # Auto session ending
     m.cmd_begin_session()
-    m.cmd_dial_telephone("123156189012")
+    b.add_time(5)
+    time.sleep(0.1)
+    m.cmd_begin_session()
+    m.cmd_end_session()
+
+    # Auto session ending while connecting
+    m.cmd_begin_session()
+    m.set_transfer_noret()
+    m.cmd_dial_telephone("123156189013")
+    b.add_time(5)
+    time.sleep(0.2)
+
+    # Timed out connection
+    m.cmd_begin_session()
+    m.cmd_dial_telephone("123156189013")
     m.cmd_end_session()
 
     s.terminate()
