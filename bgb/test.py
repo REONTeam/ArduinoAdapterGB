@@ -395,15 +395,15 @@ if __name__ == "__main__":
     m.cmd_end_session()
 
     # Auto session ending while connecting
-    m.cmd_begin_session()
-    m.set_transfer_noret()
-    m.cmd_dial_telephone("123156189013")
-    b.add_time(5)
-    time.sleep(0.2)
+    # m.cmd_begin_session()
+    # m.set_transfer_noret()
+    # m.cmd_dial_telephone("123156189013")
+    # b.add_time(5)
+    # time.sleep(0.2)
 
     # Timed out connection
-    m.cmd_begin_session()
-    m.cmd_dial_telephone("123156189013")
-    m.cmd_end_session()
+    # m.cmd_begin_session()
+    # m.cmd_dial_telephone("123156189013")
+    # m.cmd_end_session()
 
     s.terminate()

@@ -249,6 +249,7 @@ bool mobile_board_sock_send(void *user, unsigned conn, const void *data, const u
 int mobile_board_sock_recv(void *user, unsigned conn, void *data, unsigned size, struct mobile_addr *addr)
 {
     struct mobile_user *mobile = (struct mobile_user *)user;
+
     if (socket_hasdata(mobile->sockets[conn], 0) <= 0) return 0;
 
     union u_sockaddr u_addr;
