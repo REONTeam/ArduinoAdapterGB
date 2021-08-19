@@ -6,6 +6,7 @@
 #include <sys/time.h>
 
 #if defined(__unix__)
+#include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <sys/select.h>
@@ -16,6 +17,12 @@
 #include <ws2tcpip.h>
 #else
 #error "Unsupported OS"
+#endif
+
+#if defined(__unix__)
+#define socket_poll poll
+#elif defined(__WIN32__)
+#define socket_poll WSAPoll
 #endif
 
 void socket_perror(const char *func)
@@ -30,17 +37,13 @@ void socket_perror(const char *func)
     fprintf(stderr, " %s\n", error);
 #elif defined(__WIN32__)
     LPWSTR error = NULL;
-    if (!FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM,
-                NULL,
-                WSAGetLastError(),
-                MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-                (LPWSTR)&error,
-                0,
-                NULL)) {
+    if (!FormatMessageW(
+            FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM,
+            NULL, WSAGetLastError(), 0, (LPWSTR)&error, 0, NULL)) {
         putc('\n', stderr);
         return;
     }
-    fwprintf(stderr, L" %s\n", error);
+    fwprintf(stderr, L" %S", error);
     LocalFree(error);
 #endif
 }
@@ -51,8 +54,8 @@ int socket_hasdata(int socket, int delay)
         .fd = socket,
         .events = POLLIN | POLLPRI,
     };
-    int rc = poll(&fd, 1, delay);
-    if (rc == -1) perror("poll");
+    int rc = socket_poll(&fd, 1, delay);
+    if (rc == -1) socket_perror("poll");
     return rc;
 }
 
@@ -62,16 +65,37 @@ int socket_isconnected(int socket, int delay)
         .fd = socket,
         .events = POLLOUT,
     };
-    int rc = poll(&fd, 1, delay);
-    if (rc == -1) perror("poll");
+    int rc = socket_poll(&fd, 1, delay);
+    if (rc == -1) socket_perror("poll");
     if (rc <= 0) return rc;
 
     int err;
     socklen_t err_len = sizeof(err);
-    getsockopt(socket, SOL_SOCKET, SO_ERROR, &err, &err_len);
-    errno = err;
+    getsockopt(socket, SOL_SOCKET, SO_ERROR, (char *)&err, &err_len);
+    socket_seterror(err);
     if (err) return -1;
     return rc;
+}
+
+int socket_setblocking(int socket, int flag)
+{
+#if defined(__unix__)
+    int flags = fcntl(socket, F_GETFL);
+    if (flags == -1) {
+        perror("fcntl");
+        return -1;
+    }
+    flags &= ~O_NONBLOCK;
+    if (!flag) flags |= O_NONBLOCK;
+    if (fcntl(socket, F_SETFL, flags) == -1) {
+        perror("fcntl");
+        return -1;
+    }
+#elif defined(__WIN32__)
+    u_long mode = !flag;
+    if (ioctlsocket(socket, FIONBIO, &mode) != NO_ERROR) return -1;
+#endif
+    return 0;
 }
 
 int socket_connect(const char *host, const char *port)

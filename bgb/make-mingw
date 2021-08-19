@@ -1,2 +1,2 @@
 #!/bin/sh
-CC="${CC:-x86_64-w64-mingw32-gcc}" LDFLAGS="-static $LDFLAGS" LDLIBS="-lws2_32 $LDLIBS" CFLAGS="-Wno-format $CFLAGS" make dir_build=build.exe name=mobile.exe "$@"
+CC="${CC:-x86_64-w64-mingw32-gcc -m32}" LDFLAGS="-static $LDFLAGS" LDLIBS="-lws2_32 $LDLIBS" CFLAGS="-Wno-format $CFLAGS" make dir_build=build.exe name=mobile.exe "$@"

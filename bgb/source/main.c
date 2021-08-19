@@ -106,25 +106,26 @@ bool mobile_board_sock_open(void *user, unsigned conn, enum mobile_socktype sock
 {
     struct mobile_user *mobile = (struct mobile_user *)user;
 
-    int s_socktype;
+    int sock_socktype;
     switch (socktype) {
-        case MOBILE_SOCKTYPE_TCP: s_socktype = SOCK_STREAM; break;
-        case MOBILE_SOCKTYPE_UDP: s_socktype = SOCK_DGRAM; break;
+        case MOBILE_SOCKTYPE_TCP: sock_socktype = SOCK_STREAM; break;
+        case MOBILE_SOCKTYPE_UDP: sock_socktype = SOCK_DGRAM; break;
         default: return false;
     }
 
-    int s_addrtype;
+    int sock_addrtype;
     switch (addrtype) {
-        case MOBILE_ADDRTYPE_IPV4: s_addrtype = AF_INET; break;
-        case MOBILE_ADDRTYPE_IPV6: s_addrtype = AF_INET6; break;
+        case MOBILE_ADDRTYPE_IPV4: sock_addrtype = AF_INET; break;
+        case MOBILE_ADDRTYPE_IPV6: sock_addrtype = AF_INET6; break;
         default: return false;
     }
 
-    int sock = socket(s_addrtype, s_socktype | SOCK_NONBLOCK, 0);
+    int sock = socket(sock_addrtype, sock_socktype, 0);
     if (sock == -1) {
         socket_perror("socket");
         return false;
     }
+    if (socket_setblocking(sock, 0) == -1) return false;
 
     if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR,
             (char *)&(int){1}, sizeof(int)) == -1) {
@@ -171,32 +172,37 @@ int mobile_board_sock_connect(void *user, unsigned conn, const struct mobile_add
     int sock = mobile->sockets[conn];
 
     union u_sockaddr u_addr;
-    socklen_t s_addrlen;
-    struct sockaddr *s_addr = convert_sockaddr(&s_addrlen, &u_addr, addr);
+    socklen_t sock_addrlen;
+    struct sockaddr *sock_addr = convert_sockaddr(&sock_addrlen, &u_addr, addr);
 
     // Try to connect/check if we're connected
-    if (connect(sock, s_addr, s_addrlen) != -1) return 1;
+    if (connect(sock, sock_addr, sock_addrlen) != -1) return 1;
+    int err = socket_geterror();
 
     // If the connection is in progress, block at most 100ms to see if it's
     //   enough for it to connect.
-    if (errno == EINPROGRESS || errno == EALREADY) {
+    if (err == SOCKET_EWOULDBLOCK || err == SOCKET_EINPROGRESS
+            || err == SOCKET_EALREADY) {
         int rc = socket_isconnected(sock, 100);
         if (rc > 0) return 1;
         if (rc == 0) return 0;
+        err = socket_geterror();
     }
 
-    char s_host[INET6_ADDRSTRLEN] = {0};
-    char s_port[6];
-    if (s_addr->sa_family == AF_INET) {
-        inet_ntop(s_addr->sa_family, &u_addr.addr4.sin_addr, s_host,
-            sizeof(s_host));
-        sprintf(s_port, "%u", ntohs(u_addr.addr4.sin_port) & 0xFFFF);
-    } else if (s_addr->sa_family == AF_INET6) {
-        inet_ntop(s_addr->sa_family, &u_addr.addr6.sin6_addr, s_host,
-            sizeof(s_host));
-        sprintf(s_port, "%u", ntohs(u_addr.addr6.sin6_port) & 0xFFFF);
+    char sock_host[INET6_ADDRSTRLEN] = {0};
+    char sock_port[6];
+    if (sock_addr->sa_family == AF_INET) {
+        inet_ntop(sock_addr->sa_family, &u_addr.addr4.sin_addr, sock_host,
+            sizeof(sock_host));
+        sprintf(sock_port, "%u", ntohs(u_addr.addr4.sin_port) & 0xFFFF);
+    } else if (sock_addr->sa_family == AF_INET6) {
+        inet_ntop(sock_addr->sa_family, &u_addr.addr6.sin6_addr, sock_host,
+            sizeof(sock_host));
+        sprintf(sock_port, "%u", ntohs(u_addr.addr6.sin6_port) & 0xFFFF);
     }
-    fprintf(stderr, "Could not connect (ip %s port %s) (errno=%d):", s_host, s_port, errno);
+    socket_seterror(err);
+    fprintf(stderr, "Could not connect (ip %s port %s):",
+        sock_host, sock_port);
     socket_perror(NULL);
     socket_close(sock);
     mobile->sockets[conn] = -1;
@@ -221,7 +227,7 @@ bool mobile_board_sock_listen(void *user, unsigned conn)
 bool mobile_board_sock_accept(void *user, unsigned conn)
 {
     struct mobile_user *mobile = (struct mobile_user *)user;
-    if (socket_hasdata(mobile->sockets[conn], 1000) == -1) return false;
+    if (socket_hasdata(mobile->sockets[conn], 1000) <= 0) return false;
     int sock = accept(mobile->sockets[conn], NULL, NULL);
     if (sock == -1) {
         socket_perror("accept");
@@ -237,9 +243,9 @@ bool mobile_board_sock_send(void *user, unsigned conn, const void *data, const u
     struct mobile_user *mobile = (struct mobile_user *)user;
 
     union u_sockaddr u_addr;
-    socklen_t s_addrlen;
-    struct sockaddr *s_addr = convert_sockaddr(&s_addrlen, &u_addr, addr);
-    if (sendto(mobile->sockets[conn], data, size, 0, s_addr, s_addrlen) == -1) {
+    socklen_t sock_addrlen;
+    struct sockaddr *sock_addr = convert_sockaddr(&sock_addrlen, &u_addr, addr);
+    if (sendto(mobile->sockets[conn], data, size, 0, sock_addr, sock_addrlen) == -1) {
         socket_perror("send");
         return false;
     }
@@ -253,27 +259,31 @@ int mobile_board_sock_recv(void *user, unsigned conn, void *data, unsigned size,
     if (socket_hasdata(mobile->sockets[conn], 0) <= 0) return 0;
 
     union u_sockaddr u_addr;
-    socklen_t s_addrlen = sizeof(u_addr);
-    struct sockaddr *s_addr = (struct sockaddr *)&u_addr;
+    socklen_t sock_addrlen = sizeof(u_addr);
+    struct sockaddr *sock_addr = (struct sockaddr *)&u_addr;
 
     ssize_t len;
     if (data) {
-        len = recvfrom(mobile->sockets[conn], data, size, 0, s_addr, &s_addrlen);
+        len = recvfrom(mobile->sockets[conn], data, size, 0, sock_addr,
+            &sock_addrlen);
     } else {
         char c;
-        len = recvfrom(mobile->sockets[conn], &c, 1, MSG_PEEK, s_addr, &s_addrlen);
+        len = recvfrom(mobile->sockets[conn], &c, 1, MSG_PEEK, sock_addr,
+            &sock_addrlen);
     }
     if (addr) {
-        if (s_addr->sa_family == AF_INET) {
+        if (sock_addr->sa_family == AF_INET) {
             struct mobile_addr4 *addr4 = (struct mobile_addr4 *)addr;
             addr4->type = MOBILE_ADDRTYPE_IPV4;
             addr4->port = ntohs(u_addr.addr4.sin_port);
-            memcpy(addr4->host, &u_addr.addr4.sin_addr.s_addr, sizeof(addr4->host));
-        } else if (s_addr->sa_family == AF_INET6) {
+            memcpy(addr4->host, &u_addr.addr4.sin_addr.s_addr,
+                sizeof(addr4->host));
+        } else if (sock_addr->sa_family == AF_INET6) {
             struct mobile_addr6 *addr6 = (struct mobile_addr6 *)addr;
             addr6->type = MOBILE_ADDRTYPE_IPV6;
             addr6->port = ntohs(u_addr.addr6.sin6_port);
-            memcpy(addr6->host, &u_addr.addr6.sin6_addr.s6_addr, sizeof(addr6->host));
+            memcpy(addr6->host, &u_addr.addr6.sin6_addr.s6_addr,
+                sizeof(addr6->host));
         }
     }
     if (len == 0) return -1;
@@ -429,8 +439,9 @@ int main(int argc, char *argv[])
 
 #ifdef __WIN32__
     WSADATA wsaData;
-    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-        fprintf(stderr, "WSAStartup failed\n");
+    int err = WSAStartup(MAKEWORD(2, 2), &wsaData);
+    if (err != NO_ERROR) {
+        printf("WSAStartup failed with error: %d\n", err);
         return EXIT_FAILURE;
     }
 #endif
@@ -463,9 +474,9 @@ int main(int argc, char *argv[])
     mobile_init(&mobile->adapter, mobile, &adapter_config);
 
     pthread_t mobile_thread;
-    int pthread_errno = pthread_create(&mobile_thread, NULL, thread_mobile_loop, mobile);
-    if (pthread_errno) {
-        fprintf(stderr, "pthread_create: %s\n", strerror(pthread_errno));
+    int pthread_err = pthread_create(&mobile_thread, NULL, thread_mobile_loop, mobile);
+    if (pthread_err) {
+        fprintf(stderr, "pthread_create: %s\n", strerror(pthread_err));
         return EXIT_FAILURE;
     }
     bgb_loop(bgb_sock, bgb_loop_transfer, bgb_loop_timestamp, mobile);

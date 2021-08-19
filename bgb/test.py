@@ -227,6 +227,8 @@ class Mobile():
             data = data.encode()
         if not isinstance(data, list):
             data = list(data)
+        if conn is None:
+            conn = 0xFF
         res = self.transfer(Mobile.MOBILE_COMMAND_TRANSFER_DATA, [conn] + data)
         if not res:
             return None
@@ -268,6 +270,8 @@ class Mobile():
         return res[0]
 
     def cmd_close_tcp_connection(self, conn):
+        if conn is None:
+            conn = 0xFF
         return self.transfer_noreply(Mobile.MOBILE_COMMAND_CLOSE_TCP_CONNECTION, [conn])
 
     def cmd_open_udp_connection(self, ip=(0,0,0,0), port=0):
@@ -317,7 +321,8 @@ class SimpleServer():
 
 if __name__ == "__main__":
     b = BGBMaster()
-    s = subprocess.Popen(["./mobile"])
+    # s = subprocess.Popen(["./mobile"])
+    s = subprocess.Popen(["wine", "./mobile.exe"])
     # s = subprocess.Popen(["valgrind", "--leak-check=full", "--show-leak-kinds=all", "./mobile"])
     b.accept()
 
@@ -403,7 +408,7 @@ if __name__ == "__main__":
 
     # Timed out connection
     # m.cmd_begin_session()
-    # m.cmd_dial_telephone("123156189013")
+    # m.cmd_dial_telephone("127000000001")
     # m.cmd_end_session()
 
     s.terminate()
