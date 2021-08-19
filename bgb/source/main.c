@@ -266,10 +266,12 @@ int mobile_board_sock_recv(void *user, unsigned conn, void *data, unsigned size,
     if (data) {
         len = recvfrom(mobile->sockets[conn], data, size, 0, sock_addr,
             &sock_addrlen);
+        if (len == 0) return -1;
     } else {
         char c;
         len = recvfrom(mobile->sockets[conn], &c, 1, MSG_PEEK, sock_addr,
             &sock_addrlen);
+        if (len >= 0) len = 0;
     }
     if (addr) {
         if (sock_addr->sa_family == AF_INET) {
@@ -286,7 +288,6 @@ int mobile_board_sock_recv(void *user, unsigned conn, void *data, unsigned size,
                 sizeof(addr6->host));
         }
     }
-    if (len == 0) return -1;
     if (len == -1) socket_perror("recv");
     return len;
 }
