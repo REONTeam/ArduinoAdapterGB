@@ -1,8 +1,0 @@
-[
-    {symbol: ["ssize_t", "public", "<stddef.h>", "public"]},
-    {include: ["\"libmobile/commands.h\"", "private", "\"libmobile/mobile.h\"", "public"]},
-    {include: ["\"libmobile/serial.h\"", "private", "\"libmobile/mobile.h\"", "public"]},
-    {include: ["<sys/socket.h>", "public", "\"socket.h\"", "public"]},
-    {include: ["<netinet/in.h>", "public", "\"socket.h\"", "public"]},
-    {include: ["<netinet/tcp.h>", "public", "\"socket.h\"", "public"]},
-]

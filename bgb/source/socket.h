@@ -3,13 +3,10 @@
 #include <unistd.h>
 
 #if defined(__unix__)
-// IWYU pragma: begin_exports
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
-#include <poll.h>
-// IWYU pragma: end_exports
 #elif defined(__WIN32__)
 #define UNICODE
 #include <winsock2.h>
@@ -35,6 +32,7 @@
 #endif
 
 void socket_perror(const char *func);
+int socket_straddr(char *res, unsigned res_len, char *res_port, struct sockaddr *addr, socklen_t addrlen);
 int socket_hasdata(int socket, int delay);
 int socket_isconnected(int socket, int delay);
 int socket_setblocking(int socket, int flag);

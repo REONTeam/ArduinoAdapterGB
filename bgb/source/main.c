@@ -12,7 +12,7 @@
 #include "socket.h"
 #include "bgblink.h"
 
-#include "libmobile/debug_cmd.h"  // IWYU pragma: keep
+#include "libmobile/debug_cmd.h"
 
 struct mobile_user {
     pthread_mutex_t mutex_serial;
@@ -190,16 +190,9 @@ int mobile_board_sock_connect(void *user, unsigned conn, const struct mobile_add
     }
 
     char sock_host[INET6_ADDRSTRLEN] = {0};
-    char sock_port[6];
-    if (sock_addr->sa_family == AF_INET) {
-        inet_ntop(sock_addr->sa_family, &u_addr.addr4.sin_addr, sock_host,
-            sizeof(sock_host));
-        sprintf(sock_port, "%u", ntohs(u_addr.addr4.sin_port) & 0xFFFF);
-    } else if (sock_addr->sa_family == AF_INET6) {
-        inet_ntop(sock_addr->sa_family, &u_addr.addr6.sin6_addr, sock_host,
-            sizeof(sock_host));
-        sprintf(sock_port, "%u", ntohs(u_addr.addr6.sin6_port) & 0xFFFF);
-    }
+    char sock_port[6] = {0};
+    socket_straddr(sock_host, sizeof(sock_host), sock_port, sock_addr,
+        sock_addrlen);
     socket_seterror(err);
     fprintf(stderr, "Could not connect (ip %s port %s):",
         sock_host, sock_port);

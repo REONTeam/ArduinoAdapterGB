@@ -3,6 +3,8 @@ name := mobile
 dir_source := source
 dir_build := build
 
+STRIP ?= strip
+
 CFLAGS := -Og -g -Wall -Wextra -std=gnu17 $(CFLAGS)
 
 CFLAGS += -pthread #$(shell pkg-config --cflags ...)
@@ -32,11 +34,7 @@ sanit: $(name)
 optim: CFLAGS += $(OPTIM)
 optim: LDFLAGS += $(OPTIM)
 optim: $(name)
-	strip -s $(name)
-
-.PHONY: iwyu
-iwyu:
-	$(MAKE) -k CC="include-what-you-use -Xiwyu --mapping_file=iwyu.imp -Xiwyu --no_fwd_decls" $(name)
+	$(STRIP) -s $(name)
 
 $(name): $(objects)
 	$(LINK.o) $^ $(LOADLIBES) $(LDLIBS) -o $@

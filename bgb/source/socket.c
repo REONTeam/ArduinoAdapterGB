@@ -6,23 +6,9 @@
 #include <sys/time.h>
 
 #if defined(__unix__)
+#include <poll.h>
 #include <fcntl.h>
 #include <netdb.h>
-#include <netinet/in.h>
-#include <sys/select.h>
-#include <sys/socket.h>
-#elif defined(__WIN32__)
-#define UNICODE
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#else
-#error "Unsupported OS"
-#endif
-
-#if defined(__unix__)
-#define socket_poll poll
-#elif defined(__WIN32__)
-#define socket_poll WSAPoll
 #endif
 
 void socket_perror(const char *func)
@@ -48,33 +34,99 @@ void socket_perror(const char *func)
 #endif
 }
 
+int socket_straddr(char *res, unsigned res_len, char *res_port, struct sockaddr *addr, socklen_t addrlen)
+{
+#if defined(__unix__)
+    (void)addrlen;
+    void *inaddr = NULL;
+    unsigned inport = 0;
+    if (addr->sa_family == AF_INET) {
+        struct sockaddr_in *addr4 = (struct sockaddr_in *)addr;
+        inaddr = &addr4->sin_addr;
+        inport = ntohs(addr4->sin_port) & 0xFFFF;
+    } else if (addr->sa_family == AF_INET6) {
+        struct sockaddr_in6 *addr6 = (struct sockaddr_in6 *)addr;
+        inaddr = &addr6->sin6_addr;
+        inport = ntohs(addr6->sin6_port) & 0xFFFF;
+    } else {
+        return -1;
+    }
+
+    if (!inet_ntop(addr->sa_family, inaddr, res, res_len)) return -1;
+    sprintf(res_port, "%u", inport);
+    return 0;
+#elif defined(__WIN32__)
+    unsigned inport = 0;
+    if (addr->sa_family == AF_INET) {
+        struct sockaddr_in *addr4 = (struct sockaddr_in *)addr;
+        inport = ntohs(addr4->sin_port) & 0xFFFF;
+    } else if (addr->sa_family == AF_INET6) {
+        struct sockaddr_in6 *addr6 = (struct sockaddr_in6 *)addr;
+        inport = ntohs(addr6->sin6_port) & 0xFFFF;
+    } else {
+        return -1;
+    }
+
+    DWORD res_len_r = res_len;
+    if (WSAAddressToStringA(addr, addrlen, NULL, res, &res_len_r)
+            == SOCKET_ERROR) {
+        return -1;
+    }
+    sprintf(res_port, "%u", inport);
+    return 0;
+#endif
+}
+
 int socket_hasdata(int socket, int delay)
 {
+#if defined(__unix__)
     struct pollfd fd = {
         .fd = socket,
         .events = POLLIN | POLLPRI,
     };
-    int rc = socket_poll(&fd, 1, delay);
-    if (rc == -1) socket_perror("poll");
+    int rc = poll(&fd, 1, delay);
+    if (rc == -1) perror("poll");
     return rc;
+#elif defined(__WIN32__)
+    fd_set rfds;
+    FD_ZERO(&rfds);
+    FD_SET(socket, &rfds);
+    fd_set exfds;
+    FD_ZERO(&exfds);
+    FD_SET(socket, &exfds);
+    struct timeval tv = {.tv_sec = delay / 1000, .tv_usec = (delay % 1000) * 1000};
+    int rc = select(socket + 1, &rfds, NULL, &exfds, &tv);
+    if (rc == -1) perror("select");
+    return rc;
+#endif
 }
 
 int socket_isconnected(int socket, int delay)
 {
+#if defined(__unix__)
     struct pollfd fd = {
         .fd = socket,
         .events = POLLOUT,
     };
-    int rc = socket_poll(&fd, 1, delay);
-    if (rc == -1) socket_perror("poll");
+    int rc = poll(&fd, 1, delay);
+    if (rc == -1) perror("poll");
     if (rc <= 0) return rc;
+#elif defined(__WIN32__)
+    fd_set wfds;
+    FD_ZERO(&wfds);
+    FD_SET(socket, &wfds);
+    struct timeval tv = {.tv_sec = delay / 1000, .tv_usec = (delay % 1000) * 1000};
+    int rc = select(socket + 1, NULL, &wfds, NULL, &tv);
+    if (rc == -1) perror("select");
+    if (rc <= 0) return rc;
+#endif
 
     int err;
     socklen_t err_len = sizeof(err);
     getsockopt(socket, SOL_SOCKET, SO_ERROR, (char *)&err, &err_len);
     socket_seterror(err);
     if (err) return -1;
-    return rc;
+    return 1;
 }
 
 int socket_setblocking(int socket, int flag)
